@@ -82,7 +82,7 @@ class F1DataIngestor:
             print(f"Fetching page {page} (Offset {offset})...")
 
             response = self.fetch_page(season,30,offset)
-            self._save_page(response,season,page+1)
+            self._save_page(response,season,page)
 
 if __name__ == "__main__":
 
