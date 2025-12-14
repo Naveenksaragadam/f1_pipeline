@@ -1,0 +1,2 @@
+# f1_pipeline
+F1 Data Pipeline: An Open-Source ELT Solution A production-grade Data Engineering pipeline extracting Formula 1 data from the Ergast API. It orchestrates ingestion into a MinIO Data Lake (Bronze), transforms data using dbt (Silver/Gold), and loads it into ClickHouse for high-performance analytics. Built with Python, Airflow, and Docker.
