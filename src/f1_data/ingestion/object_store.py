@@ -1,37 +1,123 @@
 import boto3
-from botocore.exceptions import ClientError
+import json
+from typing import Any, Dict, List, Union, Optional
+from botocore.exceptions import ClientError, BotoCoreError
 
-minio_endpoint = "http://localhost:9000"
-access_key = "minioadmin"
-secret_key = "password"
+# Define defaults or import them from config.py if preferred
+MINIO_ENDPOINT = "http://localhost:9000"
+ACCESS_KEY = "minioadmin"
+SECRET_KEY = "password"
 
-s3_client = boto3.client(
-    "s3",
-    endpoint_url=minio_endpoint,
-    aws_access_key_id=access_key,
-    aws_secret_access_key=secret_key,
-)
+class F1ObjectStore:
+    def __init__(
+        self, 
+        bucket_name: str, 
+        endpoint_url: str = MINIO_ENDPOINT, 
+        access_key: str = ACCESS_KEY, 
+        secret_key: str = SECRET_KEY,
+        client: Optional[Any] = None
+    ) -> None:
+        """
+        Initializes the ObjectStore with a bucket and an S3 client.
+        
+        Args:
+            bucket_name: The name of the target S3 bucket.
+            endpoint_url: URL for the MinIO/S3 service.
+            access_key: AWS access key ID.
+            secret_key: AWS secret access key.
+            client: Optional pre-configured boto3 client (for testing/dependency injection).
+        """
+        self.bucket_name = bucket_name
+        self.endpoint_url = endpoint_url
+        self.access_key = access_key
+        self.secret_key = secret_key
+        
+        # Initialize client if not provided
+        self.client = client or self._create_client()
 
+    def _create_client(self) -> Any:
+        """Internal helper to create the low-level boto3 client."""
+        s3_client = boto3.client(
+        "s3",
+        endpoint_url=self.endpoint_url,
+        aws_access_key_id=self.access_key,
+        aws_secret_access_key=self.secret_key,
+        )
+        return s3_client
 
-bucket_name = "f1-pipeline"
+    def _serialize_body(self, body: Union[Dict, List, str, bytes]) -> tuple[str, str]:
+        """
+        Helper to handle data serialization.
+        
+        Returns:
+            A tuple containing (serialized_body, content_type)
+        """
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body, indent=2)
+            content_type = 'application/json'
+        elif isinstance(body, bytes):
+             content_type = 'application/octet-stream'
+        else:
+            # Default for other types (strings, bytes)
+            content_type = 'text/plain'
+        return(body, content_type) # type: ignore
 
-# Check if bucket exists
-def bucket_exists(bucket_name):
-    try:
-        s3_client.head_bucket(Bucket=bucket_name)
-        return True
-    except ClientError:
-        return False
+    def bucket_exists(self) -> bool:
+        """Checks if the configured bucket exists in the store."""
+        try:
+            self.client.head_bucket(Bucket=self.bucket_name)
+            return True
+        except ClientError:
+            return False
 
-# Create bucket if it does not exist
-if not bucket_exists(bucket_name):
-    s3_client.create_bucket(Bucket=bucket_name)
-    print(f"Bucket '{bucket_name}' created.")
-else:
-    print(f"Bucket '{bucket_name}' already exists.")
+    def create_bucket_if_not_exists(self) -> None:
+        """Creates the bucket if it does not already exist."""
+        if not self.bucket_exists():
+            self.client.create_bucket(Bucket=self.bucket_name)
+            print(f"Bucket '{self.bucket_name}' created.")
+        else:
+            print(f"Bucket '{self.bucket_name}' already exists.")
 
-buckets = s3_client.list_buckets()
-for b in buckets['Buckets']:
-    print(b['Name'])
+    def put_object(self, key: str, body: Union[Dict, List, str]) -> None:
+        """
+        Uploads an object to the configured bucket.
+        
+        Args:
+            key: The file path/name in S3 (e.g., 'f1/seasons.json').
+            body: The content to upload (Dicts/Lists are auto-serialized to JSON).
+        """
+        # 1. Serialize data using _serialize_body
+        body, content_type = self._serialize_body(body)
 
-s3_client.delete_bucket(Bucket=bucket_name)
+        # 2. Call self.client.put_object using self.bucket_name
+        try:
+            self.client.put_object(
+                Bucket=self.bucket_name,
+                Key=key,
+                Body=body,
+                ContentType=content_type,
+            )
+
+            print(f"✅ Uploaded {key} to bucket {self.bucket_name}")
+
+        except ClientError as e:
+            error = e.response.get("Error", {})
+            print("❌ S3 ClientError")
+            print(f"Bucket: {self.bucket_name}")
+            print(f"Key: {key}")
+            print(f"Code: {error.get('Code')}")
+            print(f"Message: {error.get('Message')}")
+            raise  # keep failure visible during iteration
+
+        except BotoCoreError as e:
+            print("❌ BotoCoreError (SDK / network / credentials)")
+            print(f"Bucket: {self.bucket_name}")
+            print(f"Key: {key}")
+            print(f"Error: {str(e)}")
+            raise
+        
+
+    def delete_bucket(self) -> None:
+        """Deletes the current bucket."""
+        self.client.delete_bucket(Bucket=self.bucket_name)
+        print(f"{self.bucket_name} deleted sucessfully.")
