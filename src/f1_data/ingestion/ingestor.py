@@ -11,17 +11,12 @@ class F1DataIngestor:
         self.session = session or create_session()
         self.bucket = bucket
         self.store = F1ObjectStore(bucket_name=self.bucket)
-
-    def _minio_bucket_init(self):
-        self.store._create_client()
-        self.store.bucket_exists()
-        self.store.create_bucket_if_not_exists()
+    
     
     def _save_page_minio(self, data: Dict, season: int, page: int ) -> None: # pyright: ignore[reportMissingTypeArgument, reportUnknownParameterType]
         """Writes the JSON data to MinIO."""
         key = f"data/season={season}/page_{page:03}.json"
         self.store.put_object(key,data)
-        pass
         
     
     def fetch_page(self, season: int, limit: int = 30, offset: int = 0) -> Dict: # type: ignore
@@ -54,7 +49,6 @@ class F1DataIngestor:
         
         # 1. Fetch first page to get metadata (Total/Pages)
         response = self.fetch_page(season, offset=0)
-        self._minio_bucket_init() #initiliazing Minio Bucket
         self._save_page_minio(response,season,1) # Save Page 1
         
         # 2. Calculate total pages
