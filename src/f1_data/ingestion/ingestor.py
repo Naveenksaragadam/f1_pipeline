@@ -1,9 +1,22 @@
 # src/F1_PPIPELINE/ingestion/ingestor.py
+import os
 from typing import Dict
 from requests import RequestException
-from object_store import F1ObjectStore
-from config import BASE_URL, DEFAULT_LIMIT, BUCKET
 from http_client import create_session
+from object_store import F1ObjectStore
+from config import BASE_URL, DEFAULT_LIMIT
+from dotenv import load_dotenv, find_dotenv
+
+
+# Load env vars from .env file (if it exists)
+# find_dotenv() searches up directory trees to find the file
+_env_found = load_dotenv(find_dotenv())
+
+if not _env_found:
+    # This is a helpful log for you to debug if things go wrong
+    print("⚠️  Warning: No .env file found. Relying on system environment variables.")
+
+BUCKET = os.getenv("MINIO_BUCKET", "raw")
 
 class F1DataIngestor:
     def __init__(self, base_url: str = BASE_URL, bucket: str = BUCKET, session=None) -> None:

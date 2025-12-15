@@ -8,5 +8,3 @@ DEFAULT_HEADERS = {
 }
 
 DEFAULT_LIMIT = 30
-
-BUCKET = 'raw'
