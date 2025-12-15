@@ -1,7 +1,7 @@
 # src/F1_PPIPELINE/ingestion/http_client.py
 
 import requests
-from config import DEFAULT_HEADERS
+from .config import DEFAULT_HEADERS
 
 
 def create_session() -> requests.Session:
