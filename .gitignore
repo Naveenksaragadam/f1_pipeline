@@ -9,6 +9,8 @@ raw_json_data/
 *.parquet
 *.db
 
+minio/
+
 # 2. CREDENTIAL SAFETY
 config_local.py
 secrets.yaml
