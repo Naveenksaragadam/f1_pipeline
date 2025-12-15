@@ -2,26 +2,33 @@
 # F1 PROJECT SPECIFIC
 # ===========================
 
-# 1. DATA SAFETY
-raw_json_data/
-*.json
-*.csv
-*.parquet
-*.db
+# Runtime data
+data/raw/
+volumes/minio/
 
-minio/
-
-# 2. CREDENTIAL SAFETY
+# Credentials
 config_local.py
 secrets.yaml
 .env
+.aws/
+.boto/
 
-# 3. DOCKER JUNK
+# Docker
 .docker/
+docker-compose.override.yml
 
-# 4. LOGS
+# Logs
 logs/
 *.log
 
-# 5. VENV
+# Python environment
 .venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
