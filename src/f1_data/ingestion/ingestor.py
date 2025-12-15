@@ -2,9 +2,9 @@
 import logging
 from typing import Dict
 from requests import RequestException
-from http_client import create_session
-from object_store import F1ObjectStore
-from config import BASE_URL, DEFAULT_LIMIT, MINIO_BUCKET, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+from .http_client import create_session
+from .object_store import F1ObjectStore
+from .config import BASE_URL, DEFAULT_LIMIT, MINIO_BUCKET, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
 logger = logging.getLogger(__name__)
 

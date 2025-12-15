@@ -1,5 +1,5 @@
 import logging
-from ingestor import F1DataIngestor
+from .ingestor import F1DataIngestor
 
 logger = logging.getLogger(__name__)
 
