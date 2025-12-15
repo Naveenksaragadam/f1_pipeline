@@ -1,19 +1,16 @@
-import os 
+# src/F1_PPIPELINE/ingestion/ingestor.py
 import json
-import requests
-from requests import RequestException
 from pathlib import Path
+from typing import Dict
+
+from .config import BASE_URL, DEFAULT_LIMIT
+from .http_client import create_session
 
 
 class F1DataIngestor:
-    def __init__(self,base_url="https://api.jolpi.ca/ergast/f1") -> None:
+    def __init__(self, base_url: str = BASE_URL, session=None) -> None:
         self.base_url = base_url
-
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "F1-Data-Project/1.0",
-            "Accept": "application/json"
-        })
+        self.session = session or create_session()
     
     def _get_output_path(self, season: int, page: int) -> Path:
         """Helper to determine where to save the file."""
@@ -27,7 +24,7 @@ class F1DataIngestor:
         save_dir.mkdir(parents=True,exist_ok=True)
         return save_dir / f"page_{page:03}.json"
     
-    def _save_page(self, data: dict, season: int, page: int ) -> None:
+    def _save_page(self, data: dict, season: int, page: int ) -> None: # pyright: ignore[reportMissingTypeArgument, reportUnknownParameterType]
         """Writes the JSON data to disk."""
         file_path = self._get_output_path(season, page)
         print(f"Saving page number {page} to disk....")
@@ -40,7 +37,7 @@ class F1DataIngestor:
             raise
         
     
-    def fetch_page(self, season: int, limit: int = 30, offset: int = 0) -> dict:
+    def fetch_page(self, season: int, limit: int = 30, offset: int = 0) -> dict: # type: ignore
         """Fetches a single page using the session and params dict."""
         endpoint = f"{self.base_url}/{season}/results.json"
         
