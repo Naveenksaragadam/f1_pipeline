@@ -1,17 +1,19 @@
 
 import json
 import boto3
+import logging
 from typing import Any, Dict, List, Union, Optional
 from botocore.exceptions import ClientError, BotoCoreError
-from config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+
+logger = logging.getLogger(__name__)
 
 class F1ObjectStore:
     def __init__(
         self, 
         bucket_name: str, 
-        endpoint_url: str = MINIO_ENDPOINT, 
-        access_key: str = MINIO_ACCESS_KEY, 
-        secret_key: str = MINIO_SECRET_KEY,
+        endpoint_url: str, 
+        access_key: str, 
+        secret_key: str,
         client: Optional[Any] = None
     ) -> None:
         """
@@ -71,9 +73,9 @@ class F1ObjectStore:
         """Creates the bucket if it does not already exist."""
         if not self.bucket_exists():
             self.client.create_bucket(Bucket=self.bucket_name)
-            print(f"Bucket '{self.bucket_name}' created.")
+            logger.info(f"Bucket '{self.bucket_name}' created.")
         else:
-            print(f"Bucket '{self.bucket_name}' already exists.")
+            logger.info(f"Bucket '{self.bucket_name}' already exists.")
 
     def put_object(self, key: str, body: Union[Dict, List, str]) -> None:
         """
@@ -95,26 +97,26 @@ class F1ObjectStore:
                 ContentType=content_type,
             )
 
-            print(f"✅ Uploaded {key} to bucket {self.bucket_name}")
+            logger.info(f"✅ Uploaded {key} to bucket {self.bucket_name}")
 
         except ClientError as e:
             error = e.response.get("Error", {})
-            print("❌ S3 ClientError")
-            print(f"Bucket: {self.bucket_name}")
-            print(f"Key: {key}")
-            print(f"Code: {error.get('Code')}")
-            print(f"Message: {error.get('Message')}")
+            logger.error("❌ S3 ClientError")
+            logger.error(f"Bucket: {self.bucket_name}")
+            logger.error(f"Key: {key}")
+            logger.error(f"Code: {error.get('Code')}")
+            logger.error(f"Message: {error.get('Message')}")
             raise  # keep failure visible during iteration
 
         except BotoCoreError as e:
-            print("❌ BotoCoreError (SDK / network / credentials)")
-            print(f"Bucket: {self.bucket_name}")
-            print(f"Key: {key}")
-            print(f"Error: {str(e)}")
+            logger.error("❌ BotoCoreError (SDK / network / credentials)")
+            logger.error(f"Bucket: {self.bucket_name}")
+            logger.error(f"Key: {key}")
+            logger.error(f"Error: {str(e)}")
             raise
         
 
     def delete_bucket(self) -> None:
         """Deletes the current bucket."""
         self.client.delete_bucket(Bucket=self.bucket_name)
-        print(f"{self.bucket_name} deleted sucessfully.")
+        logger.info(f"{self.bucket_name} deleted sucessfully.")
