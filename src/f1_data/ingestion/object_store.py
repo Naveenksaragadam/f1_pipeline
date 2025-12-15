@@ -64,6 +64,7 @@ class F1ObjectStore:
 
     def bucket_exists(self) -> bool:
         """Checks if the configured bucket exists in the store."""
+        self._create_client()
         try:
             self.client.head_bucket(Bucket=self.bucket_name)
             return True
@@ -89,7 +90,11 @@ class F1ObjectStore:
         # 1. Serialize data using _serialize_body
         body, content_type = self._serialize_body(body)
 
-        # 2. Call self.client.put_object using self.bucket_name
+        # 2. very the bucket exists before putting object
+
+        self.create_bucket_if_not_exists()
+
+        # 3. Call self.client.put_object using self.bucket_name
         try:
             self.client.put_object(
                 Bucket=self.bucket_name,
