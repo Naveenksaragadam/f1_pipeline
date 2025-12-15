@@ -11,6 +11,7 @@ class F1DataIngestor:
         self.session = session or create_session()
         self.bucket = bucket
         self.store = F1ObjectStore(bucket_name=self.bucket)
+        self.store.create_bucket_if_not_exists()
     
     
     def _save_page_minio(self, data: Dict, season: int, page: int ) -> None: # pyright: ignore[reportMissingTypeArgument, reportUnknownParameterType]
