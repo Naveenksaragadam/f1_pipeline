@@ -1,31 +1,17 @@
-import os
+
 import json
 import boto3
-from dotenv import load_dotenv, find_dotenv
 from typing import Any, Dict, List, Union, Optional
 from botocore.exceptions import ClientError, BotoCoreError
-
-
-# Load env vars from .env file (if it exists)
-# find_dotenv() searches up directory trees to find the file
-_env_found = load_dotenv(find_dotenv())
-
-if not _env_found:
-    # This is a helpful log for you to debug if things go wrong
-    print("⚠️  Warning: No .env file found. Relying on system environment variables.")
-
-# Reading environment variables with Default altervatives
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "password")
+from config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
 class F1ObjectStore:
     def __init__(
         self, 
         bucket_name: str, 
         endpoint_url: str = MINIO_ENDPOINT, 
-        access_key: str = ACCESS_KEY, 
-        secret_key: str = SECRET_KEY,
+        access_key: str = MINIO_ACCESS_KEY, 
+        secret_key: str = MINIO_SECRET_KEY,
         client: Optional[Any] = None
     ) -> None:
         """
