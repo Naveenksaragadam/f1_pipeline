@@ -28,7 +28,7 @@ __pycache__/
 *$py.class
 
 # test python file
-src/f1_data/ingestion/test_minio.py
+src/test
 
 # IDE / Editor
 .vscode/

@@ -31,3 +31,85 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "password")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "raw")
+MINIO_BUCKET_BRONZE = os.getenv('MINIO_BUCKET_BRONZE',"bronze")
+MINIO_BUCKET_SILVER = os.getenv('MINIO_BUCKET_SILVER',"silver")
+MINIO_BUCKET_GOLD = os.getenv('MINIO_BUCKET_GOLD',"gold")
+
+# 4. ENDPOINT STRATEGY (The "Business Rules")
+# Classifies every endpoint by Type (Static, Season, Race) and defined URL patterns.
+
+ENDPOINT_CONFIG = {
+    # --- GROUP 1: Static / Reference (Run Quarterly) ---
+    "seasons": {
+        "type": "static",
+        "url_template": "seasons.json",
+        "pagination": True
+    },
+    "circuits": {
+        "type": "static",
+        "url_template": "circuits.json",
+        "pagination": True
+    },
+    "status": {
+        "type": "static",
+        "url_template": "status.json",
+        "pagination": True
+    },
+
+    # --- GROUP 2: Season-Level (Run Yearly/Quarterly) ---
+    "constructors": {
+        "type": "season",
+        "url_template": "{season}/constructors.json",
+        "pagination": True
+    },
+    "drivers": {
+        "type": "season",
+        "url_template": "{season}/drivers.json",
+        "pagination": True
+    },
+    # The Schedule is special: We use it to drive the loop for Group 3
+    "races": {
+        "type": "season",
+        "url_template": "{season}.json", 
+        "pagination": False 
+    },
+
+    # --- GROUP 3: Race-Level (Run Weekly during Season) ---
+    "results": {
+        "type": "race",
+        "url_template": "{season}/{round}/results.json",
+        "pagination": True
+    },
+    "qualifying": {
+        "type": "race",
+        "url_template": "{season}/{round}/qualifying.json",
+        "pagination": True
+    },
+    "sprint": {
+        "type": "race",
+        "url_template": "{season}/{round}/sprint.json",
+        "pagination": True
+    },
+    "pitstops": {
+        "type": "race",
+        "url_template": "{season}/{round}/pitstops.json",
+        "pagination": True
+    },
+    "laps": {
+        "type": "race",
+        "url_template": "{season}/{round}/laps.json",
+        "pagination": True
+    },
+
+    # --- GROUP 4: Standings (Race-Level Dependency) ---
+    "driverstandings": {
+        "type": "race",
+        "url_template": "{season}/{round}/driverstandings.json",
+        "pagination": True
+    },
+    "constructorstandings": {
+        "type": "race",
+        "url_template": "{season}/{round}/constructorstandings.json",
+        "pagination": True
+    },
+}
