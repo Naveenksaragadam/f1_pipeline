@@ -102,7 +102,7 @@ class F1DataIngestor:
             logger.error("Error: The response was not valid JSON.")
             raise
         
-    def ingest_endpoint(self, endpoint_name: str, batch_id: str, season: int = None, round: str = None) -> None:
+    def ingest_endpoint(self, endpoint_name: str, batch_id: str, season: int = None, round: str = None) -> None: # type: ignore
         """
         Generic Engine: Handles URL building, Pagination, and Saving.
         """
