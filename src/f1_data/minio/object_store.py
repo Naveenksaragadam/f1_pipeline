@@ -2,6 +2,7 @@
 import json
 import boto3
 import logging
+from botocore.client import Config
 from typing import Any, Dict, List, Union, Optional
 from botocore.exceptions import ClientError, BotoCoreError
 
@@ -41,8 +42,32 @@ class F1ObjectStore:
         endpoint_url=self.endpoint_url,
         aws_access_key_id=self.access_key,
         aws_secret_access_key=self.secret_key,
+        region_name="us-east-1", 
+        config=Config(signature_version='s3v4')
         )
         return s3_client
+
+    def bucket_exists(self) -> bool:
+        """Checks if the configured bucket exists in the store."""
+        try:
+            self.client.head_bucket(Bucket=self.bucket_name)
+            return True
+        except ClientError:
+            return False
+
+    def create_bucket_if_not_exists(self) -> None:
+        """Creates the bucket if it does not already exist."""
+        if not self.bucket_exists():
+            self.client.create_bucket(Bucket=self.bucket_name)
+            logger.info(f"Bucket '{self.bucket_name}' created.")
+        else:
+            logger.info(f"Bucket '{self.bucket_name}' already exists.")
+            
+
+    def delete_bucket(self) -> None:
+        """Deletes the current bucket."""
+        self.client.delete_bucket(Bucket=self.bucket_name)
+        logger.info(f"{self.bucket_name} deleted sucessfully.")
 
     def _serialize_body(self, body: Union[Dict, List, str, bytes]) -> tuple[str, str]:
         """
@@ -60,22 +85,6 @@ class F1ObjectStore:
             # Default for other types (strings, bytes)
             content_type = 'text/plain'
         return(body, content_type) # type: ignore
-
-    def bucket_exists(self) -> bool:
-        """Checks if the configured bucket exists in the store."""
-        try:
-            self.client.head_bucket(Bucket=self.bucket_name)
-            return True
-        except ClientError:
-            return False
-
-    def create_bucket_if_not_exists(self) -> None:
-        """Creates the bucket if it does not already exist."""
-        if not self.bucket_exists():
-            self.client.create_bucket(Bucket=self.bucket_name)
-            logger.info(f"Bucket '{self.bucket_name}' created.")
-        else:
-            logger.info(f"Bucket '{self.bucket_name}' already exists.")
 
     def put_object(self, key: str, body: Union[Dict, List, str]) -> None:
         """
@@ -114,9 +123,19 @@ class F1ObjectStore:
             logger.error(f"Key: {key}")
             logger.error(f"Error: {str(e)}")
             raise
-        
 
-    def delete_bucket(self) -> None:
-        """Deletes the current bucket."""
-        self.client.delete_bucket(Bucket=self.bucket_name)
-        logger.info(f"{self.bucket_name} deleted sucessfully.")
+    def object_exists(self, key: str) -> bool:
+        """
+        Checks if a specific object key exists in the bucket.
+        Returns True if found, False otherwise.
+        """
+        try:
+            self.client.head_object(Bucket=self.bucket_name, Key=key)
+            return True
+        except ClientError as e:
+            # 404 Not Found is the only "safe" error to return False for
+            if e.response['Error']['Code'] == "404":
+                return False
+            # Other errors (403 Forbidden, 500) should raise an exception
+            logger.error(f"❌ Error checking object {key}: {e}")
+            raise
