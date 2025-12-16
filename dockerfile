@@ -1,4 +1,4 @@
-# 1. Use a stable version (2.10.3 is current stable, 3.0.0 is beta/bleeding edge)
+# 1. Use a stable version 
 FROM apache/airflow:2.10.3
 
 # 2. Switch to root ONLY for file copying
