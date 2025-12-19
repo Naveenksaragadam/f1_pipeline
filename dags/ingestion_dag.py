@@ -1,42 +1,55 @@
 import logging
 import pendulum
+from datetime import datetime
 from airflow import DAG # type: ignore
 from airflow.operators.python import PythonOperator # type: ignore
 
-logger = logging.getLogger(__name__)
-
-
 from f1_data.ingestion.ingestor import F1DataIngestor
 
+logger = logging.getLogger(__name__)
+
 def run_ingestion(**kwargs):
-    # Get the "Logical Date" (The date Airflow is simulating)
+    """
+    Orchestrates the ingestion using the new Config-Driven Engine.
+    """
+    # 1. Extract Context
     logical_date = kwargs["logical_date"]
-    
-    # Extract the season dynamically
+    batch_id = kwargs["ts_nodash"]
     season_year = logical_date.year
     
-    # Get a unique Batch ID (Timestamp with no dashes)
-    batch_id = kwargs["ts_nodash"]
-    
-    logger.info(f"DEBUG: Ingesting Season {season_year} | Batch: {batch_id}")
+    # 2. Determine "Force Refresh" Logic
+    # If we are ingesting the CURRENT active season, data might change (penalties, new races).
+    # We should force refresh to ensure we get the latest state.
+    # For historical years (e.g. 2015), data never changes, so we use idempotent skip.
+    current_year = pendulum.now().year
+    should_force_refresh = (season_year == current_year)
 
-    # 4. Instantiate and run
+    logger.info(
+        f"🚀 Starting Job: Season {season_year} | Batch: {batch_id} | "
+        f"Refresh: {should_force_refresh}"
+    )
+
+    # 3. Instantiate and Run
     ingestor = F1DataIngestor()
-    # Pass BOTH arguments to your ingestor
-    ingestor.ingest_season(season_year, batch_id)
+    
+    # CHANGED: We now call the new master orchestrator method
+    ingestor.run_full_extraction(
+        season=season_year, 
+        batch_id=batch_id,
+        force_refresh=should_force_refresh
+    )
 
 with DAG(
     dag_id="f1_pipeline",
-    start_date=pendulum.datetime(2015, 1, 1, tz="UTC"),
+    # Start a bit earlier to capture history, or keep 2015 as per your preference
+    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"), 
     schedule_interval="@yearly",
     catchup=True,
-    max_active_runs=1,
-    tags=["raw", "ingestion"]
+    max_active_runs=1, # Sequential execution prevents API rate limits
+    tags=["bronze", "ingestion"]
 ) as dag:
     
     ingest_task = PythonOperator(
         task_id="raw_ingest",
         python_callable=run_ingestion,
-        
     )
-
