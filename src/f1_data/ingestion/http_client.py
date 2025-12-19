@@ -15,9 +15,9 @@ def create_session() -> requests.Session:
     # 1. Rate Limiter (Throttles outgoing requests)
     # Note: Uses memory backend by default, so it resets on script restart.
     session = LimiterSession(
-        per_second=1, 
-        per_hour=500,
-        burst=2
+        per_second=2, 
+        per_minute=120,
+        burst=5
     )
 
     # 2. Retry Strategy (Handles 429s gracefully)
