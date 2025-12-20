@@ -57,4 +57,15 @@ def initialize_buckets():
     logger.info("✅ Storage Initialization Complete.")
 
 if __name__ == "__main__":
-    initialize_buckets()
+    # initialize_buckets()
+    # print(MINIO_ENDPOINT)
+    store = F1ObjectStore(
+        bucket_name=MINIO_BUCKET_BRONZE,
+        endpoint_url=MINIO_ENDPOINT,
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY
+    )
+    store.create_bucket_if_not_exists()
+    objects = store.list_objects('ergast/endpoint=constructors')
+    print(objects)
+    

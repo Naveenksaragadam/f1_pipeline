@@ -139,3 +139,17 @@ class F1ObjectStore:
             # Other errors (403 Forbidden, 500) should raise an exception
             logger.error(f"❌ Error checking object {key}: {e}")
             raise
+    def list_objects(self, prefix: str) -> List[str]:
+        try:
+            paginator = self.client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
+            
+            keys = []
+            for page in pages:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        keys.append(obj['Key'])
+            return keys
+        except ClientError as e:
+            logger.error(f"Error listing objects: {e}")
+            return []
