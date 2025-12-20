@@ -106,6 +106,28 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: airflow
       _AIRFLOW_WWW_USER_PASSWORD: airflow
     user: "0:0"
+    clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: f1_clickhouse
+    hostname: clickhouse
+    ports:
+      - "8123:8123"  # HTTP Interface (Best for Python/Pandas/DBeaver)
+      - "9009:9000"  # Native Interface (Mapped to 9009 on Mac to avoid MinIO conflict)
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres-db-volume:
+  ./volumes/minio/data:
+  clickhouse_data:
+  clickhouse_log:

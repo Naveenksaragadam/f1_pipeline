@@ -8,4 +8,5 @@ if __name__ == "__main__":
     ingestor = F1DataIngestor()
     logger.info(f"\nSession created: {ingestor.session}")
     season = int(input("\nenter the Season: "))
-    ingestor.ingest_season(season)
+
+    ingestor.run_full_extraction(season=season, batch_id='Backfill',force_refresh=True)
