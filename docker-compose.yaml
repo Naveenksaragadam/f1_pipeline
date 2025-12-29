@@ -136,25 +136,29 @@ services:
 # --- AIRFLOW INIT ---
   airflow-init:
     <<: *airflow-common
-    container_name: f1_airflow_webserver
-    command: webserver
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-    depends_on:
-      <<: *airflow-common-depends-on
-      airflow-init:
-        condition: service_completed_successfully
-    deploy:
-      resources:
-        limits:
-          memory: 2G
+    container_name: f1_airflow_init
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create \
+          --username airflow \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password airflow
+      "
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+    user: "0:0"
+    restart: "no"
+    depends_on:  # Override to remove cycle
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   # --- AIRFLOW WEBSERVER ---
   airflow-webserver:
