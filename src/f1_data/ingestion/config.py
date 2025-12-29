@@ -1,22 +1,27 @@
-# src/f1_data/ingestion/config.py
+"""
+Configuration module for F1 Data Pipeline.
+Loads environment variables and defines endpoint specifications.
+"""
 import os
+import sys
 import logging
-from typing import Dict, TypedDict, Literal
+from typing import Dict, Literal
 from dotenv import load_dotenv, find_dotenv
 
 # --- LOGGING CONFIG ---
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # --- ENV LOADING ---
-# Load .env file for local development. 
-# In Docker, these values are injected directly via docker-compose.
 _env_found = load_dotenv(find_dotenv())
 if not _env_found:
-    logger.info("ℹ️  No .env file found. Assuming running in Docker or CI environment.")
+    logger.info("ℹ️  No .env file found. Using environment variables from system/Docker.")
 
 # --- TYPE DEFINITIONS ---
-class EndpointSettings(TypedDict):
+class EndpointSettings:
     """Schema for defining API endpoint characteristics."""
     group: Literal["season", "race", "reference"]
     url_pattern: str
@@ -24,122 +29,213 @@ class EndpointSettings(TypedDict):
     has_round: bool
     pagination: bool
 
-# --- 1. API CONFIGURATION (Jolpica) ---
-BASE_URL: str = "https://api.jolpi.ca/ergast/f1"
-REQUEST_TIMEOUT: int = 30
 
-# Rate Limiting (Loaded from .env with safe defaults)
+def get_env_required(key: str, default: str | None = None) -> str:
+    """
+    Get required environment variable with validation.
+    
+    Args:
+        key: Environment variable name
+        default: Default value if not set
+        
+    Returns:
+        Environment variable value
+        
+    Raises:
+        SystemExit: If required variable is missing and no default provided
+    """
+    value = os.getenv(key, default)
+    if value is None:
+        logger.error(f"❌ Required environment variable '{key}' is not set!")
+        logger.error("Please check your .env file or docker-compose environment section.")
+        sys.exit(1)
+    return value
+
+
+# --- 1. API CONFIGURATION (Ergast via Jolpica) ---
+BASE_URL: str = os.getenv("API_BASE_URL", "https://api.jolpi.ca/ergast/f1")
+REQUEST_TIMEOUT: int = int(os.getenv("API_TIMEOUT", "30"))
+
+# Rate Limiting
 DEFAULT_LIMIT: int = int(os.getenv("API_PAGE_LIMIT", "100"))
 API_RATE_PER_SEC: int = int(os.getenv("API_RATE_LIMIT_PER_SEC", "4"))
 API_RATE_PER_MIN: int = int(os.getenv("API_RATE_LIMIT_PER_MIN", "200"))
 API_BURST: int = int(os.getenv("API_BURST_LIMIT", "10"))
 
 DEFAULT_HEADERS: Dict[str, str] = {
-    "User-Agent": "F1-Data-Pipeline/1.0",
+    "User-Agent": "F1-Data-Pipeline/1.0 (Production)",
     "Accept": "application/json"
 }
 
 # --- 2. RETRY STRATEGY CONFIGURATION ---
-# Controlled centrally here, used by ingestor.py
-RETRY_MAX_ATTEMPTS: int = 10
-RETRY_MIN_WAIT: int = 2
-RETRY_MAX_WAIT: int = 60
+RETRY_MAX_ATTEMPTS: int = int(os.getenv("RETRY_MAX_ATTEMPTS", "10"))
+RETRY_MIN_WAIT: int = int(os.getenv("RETRY_MIN_WAIT", "2"))
+RETRY_MAX_WAIT: int = int(os.getenv("RETRY_MAX_WAIT", "60"))
 
 # --- 3. OBJECT STORE CONFIGURATION (MinIO) ---
-# Logic: Check for 'MINIO_ENDPOINT' (set by Docker). 
-# If missing, fallback to 'MINIO_ENDPOINT_EXTERNAL' (set by .env for local).
-# If both missing, default to localhost.
+# Docker internal endpoint vs external local endpoint
 MINIO_ENDPOINT: str = os.getenv(
     "MINIO_ENDPOINT", 
     os.getenv("MINIO_ENDPOINT_EXTERNAL", "http://localhost:9000")
 )
-MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 
-# Bucket Names
+MINIO_ACCESS_KEY: str = get_env_required("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY: str = get_env_required("MINIO_SECRET_KEY", "minioadmin")
+
+# Bucket Names (Medallion Architecture)
 MINIO_BUCKET_BRONZE: str = os.getenv("BUCKET_BRONZE", "bronze")
 MINIO_BUCKET_SILVER: str = os.getenv("BUCKET_SILVER", "silver")
 MINIO_BUCKET_GOLD: str = os.getenv("BUCKET_GOLD", "gold")
 
 # --- 4. DATA WAREHOUSE CONFIGURATION (ClickHouse) ---
-# Similar logic: Docker env var takes precedence over local .env var
 CLICKHOUSE_HOST: str = os.getenv(
     "CLICKHOUSE_HOST", 
     os.getenv("CLICKHOUSE_HOST_EXTERNAL", "localhost")
 )
-
-# Port selection logic: 
-# If running in Docker, we usually use the internal HTTP port (8123).
-# If running locally, we use the external mapped port (8123).
-CLICKHOUSE_PORT: int = int(os.getenv(
-    "CLICKHOUSE_PORT", 
-    os.getenv("CLICKHOUSE_PORT_HTTP_EXTERNAL", "8123")
-))
-
-CLICKHOUSE_USER: str = os.getenv("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "")
+CLICKHOUSE_PORT: int = int(os.getenv("CLICKHOUSE_PORT", "8123"))
+CLICKHOUSE_USER: str = os.getenv("CLICKHOUSE_USER", "user")
+CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "password")
 CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "default")
 
 # --- 5. ENDPOINT STRATEGY (Business Rules) ---
-# Maps pipeline definitions to Jolpica API patterns
-ENDPOINT_CONFIG: Dict[str, EndpointSettings] = {
-    # --- Reference Data (Rarely Changes) ---
+ENDPOINT_CONFIG: Dict[str, Dict] = {
+    # --- Reference Data (Static or Rarely Changes) ---
     "seasons": {
-        "group": "reference", "url_pattern": "seasons.json",
-        "has_season": False, "has_round": False, "pagination": True
+        "group": "reference",
+        "url_pattern": "seasons.json",
+        "has_season": False,
+        "has_round": False,
+        "pagination": True,
     },
     "circuits": {
-        "group": "reference", "url_pattern": "{season}/circuits.json",
-        "has_season": True, "has_round": False, "pagination": True
+        "group": "reference",
+        "url_pattern": "{season}/circuits.json",
+        "has_season": True,
+        "has_round": False,
+        "pagination": True,
     },
     "status": {
-        "group": "reference", "url_pattern": "status.json",
-        "has_season": False, "has_round": False, "pagination": True
+        "group": "reference",
+        "url_pattern": "status.json",
+        "has_season": False,
+        "has_round": False,
+        "pagination": True,
     },
     
-    # --- Season Level Data (Updates Annually/Quarterly) ---
+    # --- Season Level Data ---
     "constructors": {
-        "group": "season", "url_pattern": "{season}/constructors.json",
-        "has_season": True, "has_round": False, "pagination": True
+        "group": "season",
+        "url_pattern": "{season}/constructors.json",
+        "has_season": True,
+        "has_round": False,
+        "pagination": True,
     },
     "drivers": {
-        "group": "season", "url_pattern": "{season}/drivers.json",
-        "has_season": True, "has_round": False, "pagination": True
+        "group": "season",
+        "url_pattern": "{season}/drivers.json",
+        "has_season": True,
+        "has_round": False,
+        "pagination": True,
     },
     "races": {
-        "group": "season", "url_pattern": "{season}.json",
-        "has_season": True, "has_round": False, "pagination": False
+        "group": "season",
+        "url_pattern": "{season}.json",
+        "has_season": True,
+        "has_round": False,
+        "pagination": False,
     },
 
-    # --- Race Level Data (Updates Weekly) ---
+    # --- Race Level Data ---
     "results": {
-        "group": "race", "url_pattern": "{season}/{round}/results.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/results.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     "qualifying": {
-        "group": "race", "url_pattern": "{season}/{round}/qualifying.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/qualifying.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     "laps": {
-        "group": "race", "url_pattern": "{season}/{round}/laps.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/laps.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     "pitstops": {
-        "group": "race", "url_pattern": "{season}/{round}/pitstops.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/pitstops.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     "sprint": {
-        "group": "race", "url_pattern": "{season}/{round}/sprint.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/sprint.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     
-    # --- Standings (Race Level Dependency) ---
+    # --- Standings ---
     "driverstandings": {
-        "group": "race", "url_pattern": "{season}/{round}/driverStandings.json",
-        "has_season": True, "has_round": True, "pagination": True
+        "group": "race",
+        "url_pattern": "{season}/{round}/driverStandings.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
     },
     "constructorstandings": {
-        "group": "race", "url_pattern": "{season}/{round}/constructorStandings.json",
-        "has_season": True, "has_round": True, "pagination": True
-    }
+        "group": "race",
+        "url_pattern": "{season}/{round}/constructorStandings.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
+    },
 }
+
+
+# --- 6. CONFIGURATION VALIDATION ---
+def validate_configuration() -> bool:
+    """
+    Validate that all critical configuration is present.
+    
+    Returns:
+        True if validation passes
+        
+    Raises:
+        SystemExit: If validation fails
+    """
+    logger.info("🔍 Validating configuration...")
+    
+    errors = []
+    
+    # Check MinIO config
+    if not MINIO_ACCESS_KEY or MINIO_ACCESS_KEY == "":
+        errors.append("MINIO_ACCESS_KEY is not set")
+    
+    if not MINIO_SECRET_KEY or MINIO_SECRET_KEY == "":
+        errors.append("MINIO_SECRET_KEY is not set")
+    
+    # Check endpoint config
+    if not ENDPOINT_CONFIG:
+        errors.append("ENDPOINT_CONFIG is empty")
+    
+    if errors:
+        logger.error("❌ Configuration validation failed:")
+        for error in errors:
+            logger.error(f"   - {error}")
+        sys.exit(1)
+    
+    logger.info("✅ Configuration validation passed")
+    return True
+
+
+# Run validation on import
+if __name__ != "__main__":
+    validate_configuration()
