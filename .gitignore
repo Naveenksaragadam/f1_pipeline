@@ -30,6 +30,9 @@ __pycache__/
 # test python file
 src/test
 
+# dev docs
+docs/dev_docs
+
 # IDE / Editor
 .vscode/
 .idea/
