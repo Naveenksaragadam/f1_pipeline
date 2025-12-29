@@ -1,19 +1,18 @@
-# 1. stable version 
+# 1. Stable Airflow base
 FROM apache/airflow:2.10.3
 
-# 2. Switch to root ONLY for file copying
+# 2. Switch to root for installations
 USER root
 
-# 3. Install uv (copy binary from the official image - fast and secure)
+# 3. Install uv (fast Python package installer)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# 4. Copy dependency files first (better caching)
-# Copying uv.lock is highly recommended for reproducible builds
+# 4. Copy dependency files (layer caching optimization)
 COPY pyproject.toml uv.lock* ./
 
-# 4. Install dependencies using uv AS ROOT
-RUN uv pip install --system --no-cache -r pyproject.toml
+# 5. Install dependencies using uv
+# Fix: Use '.' not '-r' for pyproject.toml
+RUN uv pip install --system --no-cache .
 
-# 5. Switch back to airflow user to install packages
-# This ensures libraries are owned by 'airflow' and found in the path
+# 6. Switch back to airflow user
 USER airflow
