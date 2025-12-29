@@ -10,7 +10,6 @@ botocore==1.41.5
 certifi==2025.11.12
 charset-normalizer==3.4.4
 cramjam==2.11.0
--e file:///Users/naveensaragadam/dev/F1/f1_pipeline
 fastparquet==2025.12.0
 frozenlist==1.8.0
 fsspec==2025.12.0
@@ -22,11 +21,10 @@ numpy==2.4.0
 packaging==25.0
 pandas==2.3.3
 pendulum==3.1.0
-pip==25.3
 propcache==0.4.1
 pyarrow==22.0.0
 pydantic==2.12.5
-pydantic-core==2.41.5
+pydantic_core==2.41.5
 pyrate-limiter==2.10.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
@@ -37,8 +35,8 @@ s3fs==2025.12.0
 s3transfer==0.15.0
 six==1.17.0
 tenacity==9.1.2
-typing-extensions==4.15.0
 typing-inspection==0.4.2
+typing_extensions==4.15.0
 tzdata==2025.3
 urllib3==2.6.2
 wrapt==1.17.3

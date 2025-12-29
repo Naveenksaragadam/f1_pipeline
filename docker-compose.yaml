@@ -4,6 +4,7 @@ x-airflow-common:
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    # Fixed: Updated to the non-deprecated database connection key
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
@@ -98,16 +99,14 @@ services:
         limits:
           memory: 1G
 
-   #CLICKHOUSE (OLAP Warehouse)
   clickhouse:
     image: clickhouse/clickhouse-server:24.3-alpine
     container_name: f1_clickhouse
     hostname: clickhouse
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"      # HTTP Interface (for DBeaver)
-      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"    # Native TCP Interface
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9009}:9000"
     environment:
-      # Basic authentication
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-f1_analytics}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -133,28 +132,25 @@ services:
         limits:
           memory: 2G
 
-# --- AIRFLOW INIT ---
+  # --- AIRFLOW INIT ---
   airflow-init:
     <<: *airflow-common
     container_name: f1_airflow_init
-    command: >
-      bash -c "
-        airflow db migrate &&
-        airflow users create \
-          --username airflow \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com \
-          --password airflow
-      "
+    # Fixed: Changed command to 'version' because setup is now handled automatically via env variables
+    command: version
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: 'airflow'
+      _AIRFLOW_WWW_USER_PASSWORD: 'airflow'
+      _AIRFLOW_WWW_USER_FIRSTNAME: 'Admin'
+      _AIRFLOW_WWW_USER_LASTNAME: 'User'
+      _AIRFLOW_WWW_USER_EMAIL: 'admin@example.com'
+      _AIRFLOW_WWW_USER_ROLE: 'Admin'
     user: "0:0"
     restart: "no"
-    depends_on:  # Override to remove cycle
+    depends_on:
       postgres:
         condition: service_healthy
       minio:
