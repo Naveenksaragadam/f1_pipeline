@@ -153,3 +153,13 @@ class F1ObjectStore:
         except ClientError as e:
             logger.error(f"Error listing objects: {e}")
             return []
+    
+    def get_json(self, object: str) -> Dict[str, Any]:
+        """Read a JSON file from MinIO."""
+        try:
+            response = self.client.get_object(Bucket=self.bucket_name, Key=object)
+            content = response['Body'].read().decode('utf-8')
+            return json.loads(content)
+        except ClientError as e:
+            logger.error(f"Error reading {object}: {e}")
+            raise

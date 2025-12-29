@@ -3,24 +3,24 @@ import logging
 from requests import RequestException
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from tenacity import(
-    retry, 
-    stop_after_attempt, 
-    wait_exponential, 
-    retry_if_exception_type, 
-    before_sleep_log
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
 )
 
 # Internal Imports
 from .http_client import create_session
 from .config import (
-    BASE_URL, 
-    DEFAULT_LIMIT, 
-    MINIO_BUCKET_BRONZE, 
-    MINIO_ENDPOINT, 
-    MINIO_ACCESS_KEY, 
+    BASE_URL,
+    DEFAULT_LIMIT,
+    MINIO_BUCKET_BRONZE,
+    MINIO_ENDPOINT,
+    MINIO_ACCESS_KEY,
     MINIO_SECRET_KEY,
-    ENDPOINT_CONFIG  # The new config dict
+    ENDPOINT_CONFIG,  # The new config dict
 )
 from f1_data.minio.object_store import F1ObjectStore
 
@@ -31,12 +31,13 @@ logger = logging.getLogger(__name__)
 # Define what errors are worth retrying
 # We retry on RequestException (Network errors), but NOT on ValueError (Bad JSON)
 RETRY_STRATEGY = retry(
-    stop=stop_after_attempt(5),      # Give up after 5 tries
-    wait=wait_exponential(min=2, max=30), # Sleep 1s, then 2s, then 4s...
+    stop=stop_after_attempt(5),  # Give up after 5 tries
+    wait=wait_exponential(min=2, max=30),  # Sleep 1s, then 2s, then 4s...
     retry=retry_if_exception_type(RequestException),
     reraise=True,
-    before_sleep=before_sleep_log(logger, logging.WARNING)
+    before_sleep=before_sleep_log(logger, logging.WARNING),
 )
+
 
 class F1DataIngestor:
     def __init__(self, base_url: str = BASE_URL, session=None) -> None:
@@ -46,26 +47,27 @@ class F1DataIngestor:
             bucket_name=MINIO_BUCKET_BRONZE,
             endpoint_url=MINIO_ENDPOINT,
             access_key=MINIO_ACCESS_KEY,
-            secret_key=MINIO_SECRET_KEY
+            secret_key=MINIO_SECRET_KEY,
         )
         # Track ingestion stats
         self.stats = {
             "files_written": 0,
             "files_skipped": 0,
             "api_calls_made": 0,
-            "bytes_written": 0
+            "bytes_written": 0,
         }
+
     def _generate_path(
-            self, 
-            endpoint: str, 
-            batch_id: str, 
-            season: Optional[int], 
-            round: Optional[str], 
-            page: int
-        ) -> str:
+        self,
+        endpoint: str,
+        batch_id: str,
+        season: Optional[int],
+        round: Optional[str],
+        page: int,
+    ) -> str:
         """
         Implements the Hive-Style Partitioning Strategy.
-        Format: 
+        Format:
             file_pattern = (
                 "bronze/ergast/endpoint={name}/"
                 "[season={YYYY}/]"
@@ -75,63 +77,60 @@ class F1DataIngestor:
             )
         """
         path_parts = ["ergast", f"endpoint={endpoint}"]
-        
+
         if season:
             path_parts.append(f"season={season}")
         if round:
             path_parts.append(f"round={int(round):02d}")
-            
+
         path_parts.append(f"batch_id={batch_id}")
-        
+
         # Filename (Paginated vs Single)
         filename = f"page_{page:03}.json"
-        
+
         return "/".join(path_parts) + "/" + filename
-    
-    def _save_to_minio(self, data: Dict, path: str, metadata: Dict) -> None: 
+
+    def _save_to_minio(self, data: Dict, path: str, metadata: Dict) -> None:
         """Writes the JSON data to MinIO."""
         # 1. Create the Envelope
         envelope = {
             "metadata": metadata,
-            "data": data  # The actual API response lives here
+            "data": data,  # The actual API response lives here
         }
 
-        self.store.put_object(path,envelope)
+        self.store.put_object(path, envelope)
         self.stats["files_written"] += 1
-        
+
     @RETRY_STRATEGY
     def fetch_page(self, url: str, limit: int, offset: int) -> Dict:
         """Fetches a single page using the session and params dict."""
         # params dict
-        params = {
-            "limit":limit,
-            "offset":offset
-        }
-        
+        params = {"limit": limit, "offset": offset}
+
         try:
             logger.debug(f"GET {url} {params}")
-            response = self.session.get(url,params=params)
+            response = self.session.get(url, params=params)
             response.raise_for_status()
             self.stats["api_calls_made"] += 1
             logger.info("API response recieved sucessfully!!!")
             return response.json()
-            
+
         except RequestException as e:
             logger.error(f"An error occured: {e}")
             raise
 
-        except ValueError: # This catches JSON decoding errors
+        except ValueError:  # This catches JSON decoding errors
             logger.error("Error: The response was not valid JSON.")
             raise
-        
+
     def ingest_endpoint(
-            self, 
-            endpoint_name: str, 
-            batch_id: str, 
-            season: int | None = None, 
-            round: str | None = None,
-            force_refresh: bool = False
-        ) -> None:
+        self,
+        endpoint_name: str,
+        batch_id: str,
+        season: int | None = None,
+        round: str | None = None,
+        force_refresh: bool = False,
+    ) -> None:
         """
         Generic Engine: Handles URL building, Pagination, and Saving.
 
@@ -151,7 +150,7 @@ class F1DataIngestor:
         # 1. Build URL
         url_template = config["url_template"]
         # Handle formatting safely (ignore missing keys if template doesn't use them)
-        url_path = url_template.format(season=season, round=round) 
+        url_path = url_template.format(season=season, round=round)
         full_url = f"{self.base_url}/{url_path}"
 
         # 2. Pagination Loop
@@ -168,7 +167,9 @@ class F1DataIngestor:
         while True:
             try:
                 # 1. Generate Path first (we don't need data for this)
-                s3_key = self._generate_path(endpoint_name, batch_id, season, round, page)
+                s3_key = self._generate_path(
+                    endpoint_name, batch_id, season, round, page
+                )
 
                 # 2. Check if it exists (Optimistic Skip)
                 # If we have the file, we assume we should just check the next page.
@@ -199,7 +200,7 @@ class F1DataIngestor:
                     "source_url": f"{full_url}?limit={limit}&offset={offset}",
                     "api_response_total": total_records,
                     "file_version": "1.0",
-                    "force_refresh":force_refresh
+                    "force_refresh": force_refresh,
                 }
 
                 # 6. Save
@@ -210,11 +211,10 @@ class F1DataIngestor:
                 # We stop if it's not paginated OR if we have fetched the last items
                 if not is_paginated or (offset + limit >= total_records):
                     logger.info(
-                        f"✅ Finished {endpoint_name}. "
-                        f"Total records: {total_records}"
+                        f"✅ Finished {endpoint_name}. Total records: {total_records}"
                     )
                     break
-                
+
                 # Next Page
                 offset += limit
                 page += 1
@@ -224,10 +224,8 @@ class F1DataIngestor:
                 raise
 
     def run_full_extraction(
-            self, 
-            season: int, 
-            batch_id: str, 
-            force_refresh: bool = False):
+        self, season: int, batch_id: str, force_refresh: bool = False
+    ):
         """
         Orchestrates the dependency graph for a given season.
 
@@ -237,33 +235,30 @@ class F1DataIngestor:
             force_refresh: If True, re-fetch all data regardless of existence
         """
         logger.info(
-            f"\n{'='*70}\n"
+            f"\n{'=' * 70}\n"
             f"📦 Starting Extraction\n"
             f"   Season: {season}\n"
             f"   Batch ID: {batch_id}\n"
             f"   Force Refresh: {force_refresh}\n"
-            f"{'='*70}\n"
+            f"{'=' * 70}\n"
         )
 
         self.stats = {
             "files_written": 0,
             "files_skipped": 0,
             "api_calls_made": 0,
-            "bytes_written": 0
+            "bytes_written": 0,
         }
         start_time = datetime.now()
 
         try:
             # Step 1: Season-Level Reference (Constructors, Drivers)
-            # Note: We skip 'Static' here (Seasons/Circuits) as they are usually separate 
+            # Note: We skip 'Static' here (Seasons/Circuits) as they are usually separate
             logger.info("\n--- Step 1: Season-Level Data ---")
             for endpoint in ["constructors", "drivers", "races"]:
                 self.ingest_endpoint(
-                    endpoint,
-                    batch_id,
-                    season=season,
-                    force_refresh=force_refresh
-                    )
+                    endpoint, batch_id, season=season, force_refresh=force_refresh
+                )
 
             # Step 2: Get the Calendar to determine Rounds
             # We assume we just ingested 'races' (Schedule), so we can fetch it or just re-fetch quickly.
@@ -279,43 +274,42 @@ class F1DataIngestor:
             # Step 3: Loop Rounds
             logger.info("\n--- Step 3: Processing Race Data ---")
             for idx, race in enumerate(races_list, 1):
-                round_num = race["round"] 
+                round_num = race["round"]
                 race_name = race.get("raceName", "Unknown")
 
                 logger.info(
-                        f"\n   [{idx}/{total_rounds}] Round {round_num}: {race_name}"
-                    )
-                
+                    f"\n   [{idx}/{total_rounds}] Round {round_num}: {race_name}"
+                )
+
                 for endpoint in ["results", "qualifying", "laps", "pitstops", "sprint"]:
                     self.ingest_endpoint(
-                        endpoint, 
-                        batch_id, 
-                        season=season, 
+                        endpoint,
+                        batch_id,
+                        season=season,
                         round=round_num,
-                        force_refresh=force_refresh
+                        force_refresh=force_refresh,
                     )
-                
+
                 # Group 4: Standings
                 for endpoint in ["driverstandings", "constructorstandings"]:
                     self.ingest_endpoint(
-                        endpoint, 
-                        batch_id, 
-                        season=season, 
+                        endpoint,
+                        batch_id,
+                        season=season,
                         round=round_num,
-                        force_refresh=force_refresh
-                )
+                        force_refresh=force_refresh,
+                    )
             # Final stats
             duration = (datetime.now() - start_time).total_seconds()
             logger.info(
-                f"\n{'='*70}\n"
+                f"\n{'=' * 70}\n"
                 f"✅ Batch {batch_id} Complete!\n"
                 f"   Duration: {duration:.2f}s\n"
                 f"   Files Written: {self.stats['files_written']}\n"
                 f"   Files Skipped: {self.stats['files_skipped']}\n"
                 f"   API Calls: {self.stats['api_calls_made']}\n"
-                f"{'='*70}\n"
+                f"{'=' * 70}\n"
             )
         except Exception as e:
             logger.error(f"\n❌ Batch {batch_id} FAILED: {e}")
             raise
-    

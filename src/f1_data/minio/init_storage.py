@@ -67,5 +67,7 @@ if __name__ == "__main__":
     )
     store.create_bucket_if_not_exists()
     objects = store.list_objects('ergast/endpoint=constructors')
-    print(objects)
+    object = objects[0]
+    print(object)
+    print(store.get_json(object))
     
