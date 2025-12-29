@@ -7,21 +7,39 @@ x-airflow-common:
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     
     # System Config
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
     PYTHONPATH: /opt/airflow/src
+    PYTHONUNBUFFERED: 1
     
-    # --- F1 PIPELINE CONFIG ---
+    # F1 Pipeline - MinIO Config
     MINIO_ENDPOINT: http://minio:9000
-    
-    # Secrets injected from .env
     MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
     MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-    # Note: We now use specific buckets (Bronze/Silver/Gold) in code, 
-    # but keeping this env var doesn't hurt if you use it for defaults.
-    MINIO_BUCKET: ${MINIO_BUCKET} 
+    BUCKET_BRONZE: bronze
+    BUCKET_SILVER: silver
+    BUCKET_GOLD: gold
+
+    # F1 Pipeline - API Config
     API_PAGE_LIMIT: ${API_PAGE_LIMIT}
+    API_RATE_LIMIT_PER_SEC: 4
+    API_RATE_LIMIT_PER_MIN: 200
+    API_TIMEOUT: 30
+
+    # F1 Pipeline - Retry Config
+    RETRY_MAX_ATTEMPTS: 10
+    RETRY_MIN_WAIT: 2
+    RETRY_MAX_WAIT: 60
+
+    # ClickHouse Config
+    CLICKHOUSE_HOST: clickhouse
+    CLICKHOUSE_PORT: 8123
+    CLICKHOUSE_DB: ${CLICKHOUSE_DB:-f1_analytics}
+    CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
 
   volumes:
     - ./dags:/opt/airflow/dags
@@ -37,7 +55,7 @@ x-airflow-common:
 
 services:
   postgres:
-    image: postgres:13
+    image: postgres:13-alpine
     container_name: f1_postgres
     environment:
       POSTGRES_USER: airflow
@@ -46,29 +64,79 @@ services:
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
       interval: 10s
       retries: 5
       start_period: 5s
-    restart: always
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   minio:
-    # Switched to Chainguard for security/updates
     image: cgr.dev/chainguard/minio:latest
     container_name: f1_minio
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      # Chainguard often respects the upstream vars. 
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - ./volumes/minio/data:/data
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
-  airflow-webserver:
+   #CLICKHOUSE (OLAP Warehouse)
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: f1_clickhouse
+    hostname: clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"      # HTTP Interface (for DBeaver)
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"    # Native TCP Interface
+    environment:
+      # Basic authentication
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-f1_analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server
+      - ./config/clickhouse/users.xml:/etc/clickhouse-server/users.d/custom_users.xml:ro
+      - ./config/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+# --- AIRFLOW INIT ---
+  airflow-init:
     <<: *airflow-common
+    container_name: f1_airflow_webserver
     command: webserver
     ports:
       - "8080:8080"
@@ -77,51 +145,54 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    restart: always
+      start_period: 30s
+    restart: unless-stopped
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
-  airflow-scheduler:
+  # --- AIRFLOW WEBSERVER ---
+  airflow-webserver:
     <<: *airflow-common
-    command: scheduler
-    restart: always
-    depends_on:
-      <<: *airflow-common-depends-on
-      airflow-init:
-        condition: service_completed_successfully
-
-  airflow-init:
-    <<: *airflow-common
-    command: version
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: airflow
-      _AIRFLOW_WWW_USER_PASSWORD: airflow
-    user: "0:0"
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.3
-    container_name: f1_clickhouse
-    hostname: clickhouse
+    container_name: f1_airflow_webserver
+    command: webserver
     ports:
-      - "8123:8123"  # HTTP Interface (Best for Python/Pandas/DBeaver)
-      - "9009:9000"  # Native Interface (Mapped to 9009 to avoid MinIO conflict)
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-      - clickhouse_log:/var/log/clickhouse-server
+      - "8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # --- AIRFLOW SCHEDULER ---
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: f1_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 volumes:
   postgres-db-volume:
