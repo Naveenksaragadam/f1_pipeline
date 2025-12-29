@@ -53,23 +53,19 @@ services:
     restart: always
 
   minio:
-    # COACHING: Switched to Chainguard for security/updates
+    # Switched to Chainguard for security/updates
     image: cgr.dev/chainguard/minio:latest
     container_name: f1_minio
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      # MinIO changed these env vars in newer versions, but supports aliases.
       # Chainguard often respects the upstream vars. 
-      # If this fails, try MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - ./volumes/minio/data:/data
     command: server /data --console-address ":9001"
-    # COACHING: Healthcheck removed because 'curl' is not installed 
-    # in this secure distroless image.
 
   airflow-webserver:
     <<: *airflow-common
@@ -106,13 +102,14 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: airflow
       _AIRFLOW_WWW_USER_PASSWORD: airflow
     user: "0:0"
-    clickhouse:
+
+  clickhouse:
     image: clickhouse/clickhouse-server:24.3
     container_name: f1_clickhouse
     hostname: clickhouse
     ports:
       - "8123:8123"  # HTTP Interface (Best for Python/Pandas/DBeaver)
-      - "9009:9000"  # Native Interface (Mapped to 9009 on Mac to avoid MinIO conflict)
+      - "9009:9000"  # Native Interface (Mapped to 9009 to avoid MinIO conflict)
     ulimits:
       nofile:
         soft: 262144
@@ -128,6 +125,5 @@ services:
 
 volumes:
   postgres-db-volume:
-  ./volumes/minio/data:
   clickhouse_data:
   clickhouse_log:

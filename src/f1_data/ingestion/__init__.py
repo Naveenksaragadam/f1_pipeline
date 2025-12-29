@@ -9,4 +9,4 @@ if __name__ == "__main__":
     logger.info(f"\nSession created: {ingestor.session}")
     season = int(input("\nenter the Season: "))
 
-    ingestor.run_full_extraction(season=season, batch_id='Backfill',force_refresh=True)
+    ingestor.run_full_extraction(season=season, batch_id="Backfill", force_refresh=True)
