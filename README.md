@@ -69,38 +69,38 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
          ▼
 ┌─────────────────────────────────────────────────────┐
 │              Apache Airflow                         │
-│  ┌──────────────────────────────────────────────┐  │
-│  │  DAG: f1_pipeline (Yearly Schedule)         │  │
-│  │                                               │  │
-│  │  Task 1: Extract (API → Bronze)             │  │
-│  │  Task 2: Transform (Bronze → Silver)         │  │
-│  │  Task 3: Load (Silver → ClickHouse)          │  │
-│  └──────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  DAG: f1_pipeline (Yearly Schedule)          │   │
+│  │                                              │   │
+│  │  Task 1: Extract (API → Bronze)              │   │
+│  │  Task 2: Transform (Bronze → Silver)         │   │
+│  │  Task 3: Load (Silver → ClickHouse)          │   │
+│  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────┐
 │              MinIO (S3-Compatible)                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│  │  Bronze  │  │  Silver  │  │   Gold   │         │
-│  │  Raw     │→ │ Parquet  │→ │Analytics │         │
-│  │  JSON    │  │ Typed    │  │  Ready   │         │
-│  └──────────┘  └──────────┘  └──────────┘         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
+│  │  Bronze  │  │  Silver  │  │   Gold   │           │
+│  │  Raw     │→ │ Parquet  │→ │Analytics │           │
+│  │  JSON    │  │ Typed    │  │  Ready   │           │
+│  └──────────┘  └──────────┘  └──────────┘           │
 └─────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────┐
 │              ClickHouse OLAP                        │
-│  ┌──────────────┐  ┌──────────────┐               │
-│  │ Staging      │  │ Gold Models  │               │
-│  │ (S3 Engine)  │→ │ Facts & Dims │               │
-│  └──────────────┘  └──────────────┘               │
+│  ┌──────────────┐  ┌──────────────┐                 │
+│  │ Staging      │  │ Gold Models  │                 │
+│  │ (S3 Engine)  │→ │ Facts & Dims │                 │
+│  └──────────────┘  └──────────────┘                 │
 └─────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────┐
 │         Business Intelligence Layer                 │
-│    Apache Superset / Metabase / Grafana            │
+│    Apache Superset / Metabase / Grafana             │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -150,7 +150,7 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/f1_pipeline.git
+git clone https://github.com/Naveenksaragadam/f1_pipeline.git
 cd f1_pipeline
 ```
 
