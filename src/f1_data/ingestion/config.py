@@ -5,7 +5,7 @@ Loads environment variables and defines endpoint specifications.
 import os
 import sys
 import logging
-from typing import Dict, Literal
+from typing import Dict
 from dotenv import load_dotenv, find_dotenv
 
 # --- LOGGING CONFIG ---
@@ -19,15 +19,6 @@ logger = logging.getLogger(__name__)
 _env_found = load_dotenv(find_dotenv())
 if not _env_found:
     logger.info("ℹ️  No .env file found. Using environment variables from system/Docker.")
-
-# --- TYPE DEFINITIONS ---
-class EndpointSettings:
-    """Schema for defining API endpoint characteristics."""
-    group: Literal["season", "race", "reference"]
-    url_pattern: str
-    has_season: bool
-    has_round: bool
-    pagination: bool
 
 
 def get_env_required(key: str, default: str | None = None) -> str:
@@ -93,9 +84,9 @@ CLICKHOUSE_HOST: str = os.getenv(
     os.getenv("CLICKHOUSE_HOST_EXTERNAL", "localhost")
 )
 CLICKHOUSE_PORT: int = int(os.getenv("CLICKHOUSE_PORT", "8123"))
-CLICKHOUSE_USER: str = os.getenv("CLICKHOUSE_USER", "user")
-CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "password")
-CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "default")
+CLICKHOUSE_USER: str = os.getenv("CLICKHOUSE_USER", "default")
+CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "")
+CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "f1_analytics")
 
 # --- 5. ENDPOINT STRATEGY (Business Rules) ---
 ENDPOINT_CONFIG: Dict[str, Dict] = {
@@ -211,8 +202,6 @@ def validate_configuration() -> bool:
     Raises:
         SystemExit: If validation fails
     """
-    logger.info("🔍 Validating configuration...")
-    
     errors = []
     
     # Check MinIO config
@@ -226,6 +215,13 @@ def validate_configuration() -> bool:
     if not ENDPOINT_CONFIG:
         errors.append("ENDPOINT_CONFIG is empty")
     
+    # Validate endpoint configurations
+    for endpoint_name, config in ENDPOINT_CONFIG.items():
+        if not config.get("url_pattern"):
+            errors.append(f"Endpoint '{endpoint_name}' missing url_pattern")
+        if "group" not in config:
+            errors.append(f"Endpoint '{endpoint_name}' missing group")
+    
     if errors:
         logger.error("❌ Configuration validation failed:")
         for error in errors:
@@ -236,6 +232,6 @@ def validate_configuration() -> bool:
     return True
 
 
-# Run validation on import
-if __name__ != "__main__":
+# Validate configuration on import (only when not in test mode)
+if __name__ != "__main__" and "pytest" not in sys.modules:
     validate_configuration()

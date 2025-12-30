@@ -1,4 +1,4 @@
-#src/f1_data/minio/object_store.py
+# src/f1_data/minio/object_store.py
 """
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """
@@ -6,22 +6,23 @@ import json
 import boto3
 import logging
 from botocore.client import Config
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional, Tuple
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
+
 
 class F1ObjectStore:
     """
     S3-compatible object store client optimized for MinIO.
     
     Features:
-    - Connection pooling
+    - Connection pooling for performance
     - Automatic bucket creation
     - Retry logic on transient failures
     - Type-safe serialization
+    - Comprehensive error handling
     """
-
 
     def __init__(
         self, 
@@ -33,14 +34,14 @@ class F1ObjectStore:
         max_pool_connections: int = 50
     ) -> None:
         """
-        Initializes the ObjectStore with a bucket and an S3 client.
+        Initialize the ObjectStore with a bucket and an S3 client.
         
         Args:
             bucket_name: Target S3 bucket name
             endpoint_url: MinIO/S3 endpoint URL
             access_key: AWS access key ID
             secret_key: AWS secret access key
-            client: Optional pre-configured boto3 client
+            client: Optional pre-configured boto3 client (for connection sharing)
             max_pool_connections: Maximum connections in connection pool
         """
         self.bucket_name = bucket_name
@@ -58,6 +59,9 @@ class F1ObjectStore:
         
         Returns:
             Configured boto3 S3 client
+            
+        Raises:
+            Exception: If client creation fails
         """
         try:
             config = Config(
@@ -73,6 +77,7 @@ class F1ObjectStore:
                 region_name="us-east-1", 
                 config=config
             )
+            logger.debug(f"✅ S3 client created for endpoint: {self.endpoint_url}")
             return client
         except Exception as e:
             logger.error(f"❌ Failed to create S3 client: {e}")
@@ -84,6 +89,9 @@ class F1ObjectStore:
         
         Returns:
             True if bucket exists, False otherwise
+            
+        Raises:
+            ClientError: On permission or configuration errors (not 404)
         """
         try:
             self.client.head_bucket(Bucket=self.bucket_name)
@@ -93,7 +101,7 @@ class F1ObjectStore:
             if error_code in ['404', 'NoSuchBucket']:
                 return False
             # For other errors (403 Forbidden, etc.), log and re-raise
-            logger.error(f"Error checking bucket {self.bucket_name}: {e}")
+            logger.error(f"❌ Error checking bucket {self.bucket_name}: {e}")
             raise
 
     def create_bucket_if_not_exists(self) -> None:
@@ -108,7 +116,7 @@ class F1ObjectStore:
                 self.client.create_bucket(Bucket=self.bucket_name)
                 logger.info(f"✅ Bucket '{self.bucket_name}' created.")
             else:
-                logger.info(f"ℹ️ Bucket '{self.bucket_name}' already exists.")
+                logger.info(f"ℹ️  Bucket '{self.bucket_name}' already exists.")
         except ClientError as e:
             logger.error(f"❌ Failed to create bucket {self.bucket_name}: {e}")
             raise       
@@ -122,6 +130,9 @@ class F1ObjectStore:
             
         Warning:
             This is a destructive operation. Use with caution.
+            
+        Raises:
+            ClientError: On S3 errors
         """
         try:
             if force:
@@ -134,7 +145,12 @@ class F1ObjectStore:
             raise
 
     def _empty_bucket(self) -> None:
-        """Delete all objects in the bucket."""
+        """
+        Delete all objects in the bucket.
+        
+        Note:
+            This is a destructive operation used internally by delete_bucket.
+        """
         paginator = self.client.get_paginator('list_objects_v2')
         for page in paginator.paginate(Bucket=self.bucket_name):
             if 'Contents' in page:
@@ -143,11 +159,12 @@ class F1ObjectStore:
                     Bucket=self.bucket_name,
                     Delete={'Objects': objects}
                 )
+                logger.debug(f"Deleted {len(objects)} objects from {self.bucket_name}")
 
     def _serialize_body(
-            self, 
-            body: Union[Dict, List, str, bytes]
-        ) -> tuple[Union[str, bytes], str]:
+        self, 
+        body: Union[Dict, List, str, bytes]
+    ) -> Tuple[Union[str, bytes], str]:
         """
         Serialize data for S3 upload.
         
@@ -162,14 +179,14 @@ class F1ObjectStore:
         elif isinstance(body, bytes):
             return (body, 'application/octet-stream')
         else:
-            return (str(body), 'text/plain') # type: ignore
+            return (str(body), 'text/plain')
 
     def put_object(
-            self, 
-            key: str, 
-            body: Union[Dict, List, str, bytes],
-            metadata: Optional[Dict[str, str]] = None
-        ) -> None:
+        self, 
+        key: str, 
+        body: Union[Dict, List, str, bytes],
+        metadata: Optional[Dict[str, str]] = None
+    ) -> None:
         """
         Upload object to S3/MinIO.
         
@@ -182,10 +199,9 @@ class F1ObjectStore:
             ClientError: On S3 errors
             BotoCoreError: On SDK/network errors
         """
-        # 1. Serialize data using _serialize_body
+        # Serialize data
         serialized_body, content_type = self._serialize_body(body)
 
-        # 2. Call self.client.put_object using self.bucket_name
         try:
             put_params = {
                 'Bucket': self.bucket_name,
@@ -199,24 +215,28 @@ class F1ObjectStore:
             
             self.client.put_object(**put_params)
 
-            # Calculate approximate size for logging
+            # Calculate size for logging
             size_bytes = len(serialized_body) if isinstance(serialized_body, (str, bytes)) else 0
             logger.debug(f"✅ Uploaded {key} ({size_bytes:,} bytes)")
 
         except ClientError as e:
             error = e.response.get("Error", {})
-            logger.error("❌ S3 ClientError")
-            logger.error(f"Bucket: {self.bucket_name}")
-            logger.error(f"Key: {key}")
-            logger.error(f"Code: {error.get('Code')}")
-            logger.error(f"Message: {error.get('Message')}")
-            raise  # keep failure visible during iteration
+            logger.error(
+                f"❌ S3 ClientError - "
+                f"Bucket: {self.bucket_name}, "
+                f"Key: {key}, "
+                f"Code: {error.get('Code')}, "
+                f"Message: {error.get('Message')}"
+            )
+            raise
 
         except BotoCoreError as e:
-            logger.error("❌ BotoCoreError (SDK / network / credentials)")
-            logger.error(f"Bucket: {self.bucket_name}")
-            logger.error(f"Key: {key}")
-            logger.error(f"Error: {str(e)}")
+            logger.error(
+                f"❌ BotoCoreError - "
+                f"Bucket: {self.bucket_name}, "
+                f"Key: {key}, "
+                f"Error: {str(e)}"
+            )
             raise
 
     def object_exists(self, key: str) -> bool:
@@ -236,24 +256,23 @@ class F1ObjectStore:
             self.client.head_object(Bucket=self.bucket_name, Key=key)
             return True
         except ClientError as e:
-            # 404 Not Found is the only "safe" error to return False for
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code == "404":
                 return False
-            # Other errors (403 Forbidden, 500) should raise an exception
+            # Other errors (403 Forbidden, 500) should raise
             logger.error(f"❌ Error checking object {key}: {e}")
             raise
 
     def list_objects(
-            self, 
-            prefix: str,
-            max_keys: Optional[int] = None
-        ) -> List[str]:
+        self, 
+        prefix: str = "",
+        max_keys: Optional[int] = None
+    ) -> List[str]:
         """
         List objects in bucket with optional prefix filter.
         
         Args:
-            prefix: Optional key prefix filter
+            prefix: Optional key prefix filter (default: "" - all objects)
             max_keys: Maximum number of keys to return
             
         Returns:
@@ -270,6 +289,7 @@ class F1ObjectStore:
                 Prefix=prefix,
                 PaginationConfig=pagination_config
             )
+            
             keys = []
             for page in pages:
                 if 'Contents' in page:
@@ -278,7 +298,7 @@ class F1ObjectStore:
             logger.debug(f"Listed {len(keys)} objects with prefix '{prefix}'")
             return keys
         except ClientError as e:
-            logger.error(f"Error listing objects with prefix '{prefix}': {e}")
+            logger.error(f"❌ Error listing objects with prefix '{prefix}': {e}")
             return []
     
     def get_object(self, key: str) -> bytes:
@@ -332,10 +352,40 @@ class F1ObjectStore:
         
         Args:
             key: S3 object key
+            
+        Raises:
+            ClientError: On S3 errors
         """
         try:
             self.client.delete_object(Bucket=self.bucket_name, Key=key)
             logger.info(f"✅ Deleted object: {key}")
         except ClientError as e:
             logger.error(f"❌ Failed to delete {key}: {e}")
+            raise
+    
+    def get_object_metadata(self, key: str) -> Dict[str, Any]:
+        """
+        Get object metadata without downloading the object.
+        
+        Args:
+            key: S3 object key
+            
+        Returns:
+            Dictionary containing object metadata
+            
+        Raises:
+            ClientError: If object not found
+        """
+        try:
+            response = self.client.head_object(Bucket=self.bucket_name, Key=key)
+            metadata = {
+                'size': response.get('ContentLength', 0),
+                'last_modified': response.get('LastModified'),
+                'content_type': response.get('ContentType'),
+                'etag': response.get('ETag'),
+                'metadata': response.get('Metadata', {})
+            }
+            return metadata
+        except ClientError as e:
+            logger.error(f"❌ Failed to get metadata for {key}: {e}")
             raise

@@ -1,12 +1,18 @@
+#src/f1_data/ingestion/__init__.py
+"""
+F1 Data Ingestion Module
+
+Provides production-grade data ingestion capabilities for Formula 1 data
+from the Ergast API via Jolpica.
+
+Main Components:
+- F1DataIngestor: Core ingestion engine with retry logic and rate limiting
+- HTTP client: Session management with automatic retries
+- Configuration: Environment-based settings with validation
+"""
 import logging
 from .ingestor import F1DataIngestor
 
 logger = logging.getLogger(__name__)
 
-if __name__ == "__main__":
-    # Quick test to see if it works
-    ingestor = F1DataIngestor()
-    logger.info(f"\nSession created: {ingestor.session}")
-    season = int(input("\nenter the Season: "))
-
-    ingestor.run_full_extraction(season=season, batch_id="Backfill", force_refresh=True)
+__all__ = ['F1DataIngestor']

@@ -1,4 +1,4 @@
-# dags/ingestor.py
+# dags/ingestion_dag.py
 """
 F1 Data Ingestion DAG - Production Configuration
 Orchestrates yearly extraction with automatic force_refresh for current season.
@@ -7,13 +7,14 @@ import logging
 import pendulum
 from airflow import DAG # type: ignore
 from airflow.operators.python import PythonOperator # type: ignore
-from airflow.exceptions import AirflowException  # type: ignore # noqa: F401
+from airflow.exceptions import AirflowException # type: ignore
 
 from f1_data.ingestion.ingestor import F1DataIngestor
 
 logger = logging.getLogger(__name__)
 
-def run_ingestion(**kwargs):
+
+def run_ingestion(**kwargs) -> None:
     """
     Orchestrate F1 data ingestion with intelligent refresh strategy.
     
@@ -21,19 +22,21 @@ def run_ingestion(**kwargs):
     - Historical seasons (< current year): Idempotent (skip existing files)
     - Current season: Force refresh (data may change due to penalties)
     
+    Args:
+        **kwargs: Airflow context parameters
+        
     Raises:
         AirflowException: On ingestion failures
     """
     try:
-        # 1. Extract Context
+        # Extract Airflow context
         logical_date = kwargs["logical_date"]
         batch_id = kwargs["ts_nodash"]
         season_year = logical_date.year
     
-        # 2. Determine "Force Refresh" Logic
-        # If we are ingesting the CURRENT active season, data might change (penalties, new races).
-        # We should force refresh to ensure we get the latest state.
-        # For historical years (e.g. 2015), data never changes, so we use idempotent skip.
+        # Determine refresh strategy
+        # Current season data may change (penalties, new races)
+        # Historical data is stable and can be safely skipped
         current_year = pendulum.now().year
         should_force_refresh = (season_year == current_year)
 
@@ -48,7 +51,7 @@ def run_ingestion(**kwargs):
             f"{'=' * 70}"
         )
 
-        # 3. Instantiate and Run
+        # Initialize ingestor with connection validation
         ingestor = F1DataIngestor(validate_connection=True)
     
         # Run full extraction
@@ -82,8 +85,9 @@ def run_ingestion(**kwargs):
             )
             
     except Exception as e:
-        logger.error(f"❌ Ingestion failed: {e}")
+        logger.error(f"❌ Ingestion failed: {e}", exc_info=True)
         raise AirflowException(f"F1 Ingestion failed: {e}") from e
+
 
 # DAG Configuration
 default_args = {
@@ -102,8 +106,8 @@ with DAG(
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"), 
     schedule_interval="@yearly",
     catchup=True,
-    max_active_runs=1, # Sequential execution prevents API rate limits
-    tags=["f1", "bronze", "ingestion", "Jolpica"],
+    max_active_runs=1,  # Sequential execution prevents API rate limits
+    tags=["f1", "bronze", "ingestion", "jolpica"],
     doc_md="""
     # F1 Bronze Layer Ingestion
     
@@ -114,7 +118,7 @@ with DAG(
     - **Current Season**: Force refresh (penalties/updates may occur)
     
     ## Data Coverage
-    - Seasons: 2015 → Present
+    - Seasons: 2024 → Present
     - Endpoints: 13 (constructors, drivers, races, results, qualifying, etc.)
     - Storage: MinIO `bronze` bucket with Hive-style partitioning
     
@@ -125,6 +129,11 @@ with DAG(
     ## Monitoring
     - Check task logs for ingestion statistics
     - XCom key `ingestion_stats` contains summary metrics
+    
+    ## Error Handling
+    - Automatic retries on transient failures
+    - Rate limiting to respect API quotas
+    - Detailed error logging with stack traces
     """,
 ) as dag:
     
