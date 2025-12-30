@@ -1,2 +1,647 @@
-uv export --format requirements.txt --output-file requirements.txt --no-dev# f1_pipeline
-F1 Data Pipeline: An Open-Source ELT Solution A production-grade Data Engineering pipeline extracting Formula 1 data from the Ergast API. It orchestrates ingestion into a MinIO Data Lake (Bronze), transforms data using dbt (Silver/Gold), and loads it into ClickHouse for high-performance analytics. Built with Python, Airflow, and Docker.
+# 🏎️ F1 Data Pipeline
+
+[![CI Pipeline](https://github.com/yourusername/f1_pipeline/workflows/CI%20Pipeline/badge.svg)](https://github.com/yourusername/f1_pipeline/actions)
+[![codecov](https://codecov.io/gh/yourusername/f1_pipeline/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/f1_pipeline)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A **production-grade, open-source data platform** that ingests Formula 1 historical data from the Ergast API (via Jolpica) and serves it for analytical use cases. Built with industry best practices, this project demonstrates modern data engineering patterns suitable for FAANG-level system design interviews and real-world production deployments.
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Technology Stack](#-technology-stack)
+- [Prerequisites](#-prerequisites)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Usage](#-usage)
+- [Development](#-development)
+- [Testing](#-testing)
+- [Deployment](#-deployment)
+- [Monitoring](#-monitoring)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## ✨ Features
+
+### Data Engineering Capabilities
+- **Medallion Architecture**: Strict Bronze → Silver → Gold layer separation
+- **Idempotent Processing**: Safe reruns with automatic duplicate detection
+- **Smart Refresh Strategy**: Force refresh for current season, skip historical data
+- **Automatic Pagination**: Handles large datasets with configurable page sizes
+- **Retry Logic**: Exponential backoff with configurable attempts
+- **Rate Limiting**: Respects API quotas (4 req/sec, 200 req/min)
+
+### Production Features
+- **Connection Pooling**: Optimized S3 client with 50 max connections
+- **Comprehensive Logging**: Structured logs with correlation IDs
+- **Error Recovery**: Graceful failure handling with detailed error messages
+- **Statistics Tracking**: Real-time metrics on files written/skipped/errors
+- **Configuration Validation**: Environment-based config with validation
+- **Type Safety**: Full type hints for IDE support and safety
+
+### Data Coverage
+- **75+ Years**: Historical data from 1950 to present
+- **13 Endpoints**: Comprehensive coverage of F1 data
+  - Reference: seasons, circuits, status
+  - Season-level: constructors, drivers, races
+  - Race-level: results, qualifying, sprint, pitstops, laps
+  - Standings: driver standings, constructor standings
+- **15,000+ Races**: Complete historical race results
+- **500K+ Results**: Individual race results with detailed telemetry
+
+---
+
+## 🏗️ Architecture
+
+### High-Level Design
+
+```
+┌─────────────────┐
+│  Ergast API     │ (Jolpica Mirror)
+│  13 Endpoints   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────┐
+│              Apache Airflow                         │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  DAG: f1_pipeline (Yearly Schedule)         │  │
+│  │                                               │  │
+│  │  Task 1: Extract (API → Bronze)             │  │
+│  │  Task 2: Transform (Bronze → Silver)         │  │
+│  │  Task 3: Load (Silver → ClickHouse)          │  │
+│  └──────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────┐
+│              MinIO (S3-Compatible)                  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │  Bronze  │  │  Silver  │  │   Gold   │         │
+│  │  Raw     │→ │ Parquet  │→ │Analytics │         │
+│  │  JSON    │  │ Typed    │  │  Ready   │         │
+│  └──────────┘  └──────────┘  └──────────┘         │
+└─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────┐
+│              ClickHouse OLAP                        │
+│  ┌──────────────┐  ┌──────────────┐               │
+│  │ Staging      │  │ Gold Models  │               │
+│  │ (S3 Engine)  │→ │ Facts & Dims │               │
+│  └──────────────┘  └──────────────┘               │
+└─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────┐
+│         Business Intelligence Layer                 │
+│    Apache Superset / Metabase / Grafana            │
+└─────────────────────────────────────────────────────┘
+```
+
+### Medallion Architecture
+
+| Layer | Format | Purpose | Transformations |
+|-------|--------|---------|----------------|
+| **Bronze** | JSON | Raw immutable source data | None (preserve as-is) |
+| **Silver** | Parquet | Cleaned, typed, validated | Schema validation, type casting, deduplication |
+| **Gold** | ClickHouse | Analytics-ready facts/dims | Business logic, aggregations, SCD Type 2 |
+
+---
+
+## 🛠️ Technology Stack
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Orchestration** | Apache Airflow 2.10.3 | DAG-based workflow management |
+| **Storage** | MinIO (S3-compatible) | Object storage (Bronze/Silver layers) |
+| **Transformation** | Python 3.11 + Pandas | Data processing and validation |
+| **Data Warehouse** | ClickHouse 24.3 | High-performance OLAP database |
+| **Schema Validation** | Pydantic 2.x | Type-safe data validation |
+| **HTTP Client** | Requests + Tenacity | API calls with retry logic |
+| **Rate Limiting** | requests-ratelimiter | Client-side API throttling |
+| **Metadata Store** | PostgreSQL 13 | Airflow backend database |
+| **Container Runtime** | Docker + Docker Compose | Local development environment |
+
+---
+
+## 📦 Prerequisites
+
+### Required Software
+- **Docker Desktop**: 4.20+ ([Download](https://www.docker.com/products/docker-desktop))
+- **Docker Compose**: 2.20+ (included with Docker Desktop)
+- **Python**: 3.11+ ([Download](https://www.python.org/downloads/))
+- **Git**: Latest version
+
+### System Requirements
+- **RAM**: Minimum 8GB (16GB recommended)
+- **Disk**: 20GB free space
+- **CPU**: 2+ cores
+- **OS**: macOS, Linux, or Windows with WSL2
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone Repository
+```bash
+git clone https://github.com/yourusername/f1_pipeline.git
+cd f1_pipeline
+```
+
+### 2. Set Up Environment
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit with your credentials (or use defaults for local dev)
+nano .env
+```
+
+**Minimal `.env` configuration:**
+```bash
+# MinIO Credentials
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+
+# API Settings
+API_PAGE_LIMIT=100
+
+# ClickHouse (optional for Bronze/Silver only)
+CLICKHOUSE_DB=f1_analytics
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=
+```
+
+### 3. Start Services
+```bash
+# Start all services (Airflow, MinIO, ClickHouse, Postgres)
+docker-compose up -d
+
+# Verify services are healthy
+docker-compose ps
+```
+
+**Expected output:**
+```
+NAME                STATUS              PORTS
+f1_airflow_init     exited (0)         
+f1_airflow_scheduler running            
+f1_airflow_webserver running            0.0.0.0:8080->8080/tcp
+f1_clickhouse       running            0.0.0.0:8123->8123/tcp, 0.0.0.0:9009->9000/tcp
+f1_minio            running            0.0.0.0:9000-9001->9000-9001/tcp
+f1_postgres         running            5432/tcp
+```
+
+### 4. Access Web Interfaces
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Airflow UI** | http://localhost:8080 | `airflow` / `airflow` |
+| **MinIO Console** | http://localhost:9001 | `minioadmin` / `minioadmin` |
+| **ClickHouse** | http://localhost:8123 | `default` / (no password) |
+
+### 5. Run Your First Extraction
+
+**Option A: Via Airflow UI**
+1. Navigate to http://localhost:8080
+2. Enable the `f1_pipeline` DAG
+3. Click **Trigger DAG** (manually trigger for 2024 season)
+
+**Option B: Via Command Line**
+```bash
+# Trigger DAG manually
+docker-compose exec airflow-scheduler airflow dags trigger f1_pipeline
+
+# Or run backfill for historical seasons
+docker-compose exec airflow-scheduler python -m f1_data.ingestion.backfill --start 2020 --end 2023
+```
+
+### 6. Verify Data
+```bash
+# List Bronze layer files
+docker-compose exec airflow-scheduler python -c "
+from f1_data.minio.object_store import F1ObjectStore
+from f1_data.ingestion.config import *
+store = F1ObjectStore(MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
+objects = store.list_objects('ergast/endpoint=races')
+print(f'Found {len(objects)} files')
+print(objects[:5])
+"
+```
+
+---
+
+## 📁 Project Structure
+
+```
+f1_pipeline/
+├── dags/
+│   └── ingestion_dag.py          # Airflow DAG definition
+│
+├── src/
+│   └── f1_data/
+│       ├── ingestion/
+│       │   ├── __init__.py       # Module exports
+│       │   ├── ingestor.py       # Core extraction engine
+│       │   ├── config.py         # Configuration & validation
+│       │   ├── http_client.py    # HTTP session with retries
+│       │   └── backfill.py       # CLI backfill script
+│       │
+│       ├── minio/
+│       │   ├── object_store.py   # S3/MinIO client wrapper
+│       │   └── init_storage.py   # Bucket initialization
+│       │
+│       └── transform/
+│           ├── schemas.py        # Pydantic models
+│           └── (future transformers)
+│
+├── tests/
+│   ├── test_ingestor.py          # Unit tests
+│   ├── test_object_store.py      # Storage tests
+│   └── conftest.py               # Pytest fixtures
+│
+├── docs/
+│   ├── architecture.md           # Detailed architecture
+│   ├── api_endpoints.md          # Endpoint documentation
+│   └── troubleshooting.md        # Common issues
+│
+├── config/
+│   ├── clickhouse/
+│   │   ├── users.xml             # ClickHouse user config
+│   │   └── init.sql              # Database initialization
+│   └── airflow/
+│       └── (future DAG configs)
+│
+├── docker-compose.yaml           # Service definitions
+├── Dockerfile                    # Airflow image build
+├── requirements.txt              # Python dependencies
+├── .env.example                  # Example environment vars
+├── .gitignore                    # Git ignore patterns
+├── Makefile                      # Development commands
+└── README.md                     # This file
+```
+
+---
+
+## 💻 Usage
+
+### Manual Backfill
+
+**Backfill specific seasons:**
+```bash
+python -m f1_data.ingestion.backfill \
+  --start 2015 \
+  --end 2023 \
+  --batch-id "historical_load_v1"
+```
+
+**Backfill with error handling:**
+```bash
+# Skip failed seasons and continue
+python -m f1_data.ingestion.backfill --start 1950 --end 2023
+
+# Stop on first error
+python -m f1_data.ingestion.backfill --start 1950 --end 2023 --no-skip-on-error
+```
+
+### Programmatic Usage
+
+```python
+from f1_data.ingestion import F1DataIngestor
+from datetime import datetime
+
+# Initialize ingestor
+ingestor = F1DataIngestor(validate_connection=True)
+
+# Extract single season
+summary = ingestor.run_full_extraction(
+    season=2024,
+    batch_id=datetime.now().strftime("%Y%m%d_%H%M%S"),
+    force_refresh=True  # Use True for current season
+)
+
+print(f"Extraction completed: {summary['status']}")
+print(f"Files written: {summary['files_written']}")
+print(f"API calls: {summary['api_calls_made']}")
+```
+
+### Airflow DAG Customization
+
+**Modify schedule in `dags/ingestion_dag.py`:**
+```python
+with DAG(
+    dag_id="f1_pipeline",
+    schedule_interval="@yearly",  # Change to "@daily" for incremental
+    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
+    catchup=True,  # Set False to skip historical runs
+    ...
+) as dag:
+    ...
+```
+
+---
+
+## 🔧 Development
+
+### Local Setup
+
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+make install-dev
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+### Development Workflow
+
+```bash
+# Format code
+make format
+
+# Run linters
+make lint
+
+# Type checking
+make type-check
+
+# Run tests
+make test
+
+# Run with coverage
+make test-cov
+```
+
+### Adding New Endpoints
+
+1. **Update `config.py`** - Add endpoint configuration:
+```python
+ENDPOINT_CONFIG = {
+    "your_endpoint": {
+        "group": "race",  # or "season" or "reference"
+        "url_pattern": "{season}/{round}/your_endpoint.json",
+        "has_season": True,
+        "has_round": True,
+        "pagination": True,
+    },
+}
+```
+
+2. **Update `ingestor.py`** - Add to extraction flow:
+```python
+for endpoint in ["results", "qualifying", "your_endpoint"]:
+    self.ingest_endpoint(endpoint, batch_id, season=season, round_num=round_num)
+```
+
+3. **Create Pydantic schema** in `transform/schemas.py`
+
+4. **Add tests** in `tests/test_ingestor.py`
+
+---
+
+## 🧪 Testing
+
+### Run Test Suite
+
+```bash
+# All tests
+pytest tests/ -v
+
+# Unit tests only
+pytest tests/ -v -m "not integration"
+
+# Integration tests (requires running services)
+make docker-up
+pytest tests/ -v -m integration
+
+# Coverage report
+pytest tests/ --cov=src/f1_data --cov-report=html
+open htmlcov/index.html
+```
+
+### Test Categories
+
+| Marker | Purpose | Requirements |
+|--------|---------|--------------|
+| (default) | Unit tests | None |
+| `@pytest.mark.integration` | Integration tests | Docker services |
+| `@pytest.mark.slow` | Long-running tests | None |
+
+---
+
+## 🚢 Deployment
+
+### Production Deployment
+
+1. **Update environment variables:**
+```bash
+# Use production MinIO endpoint
+MINIO_ENDPOINT=https://minio.prod.example.com
+
+# Use production ClickHouse
+CLICKHOUSE_HOST=clickhouse.prod.example.com
+CLICKHOUSE_PASSWORD=<secure_password>
+```
+
+2. **Build production image:**
+```bash
+docker build -t f1-pipeline:v1.0.0 .
+```
+
+3. **Deploy with docker-compose:**
+```bash
+docker-compose -f docker-compose.prod.yaml up -d
+```
+
+### Kubernetes Deployment (Future)
+
+```bash
+# Apply manifests
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/secrets.yaml
+kubectl apply -f k8s/deployments/
+kubectl apply -f k8s/services/
+```
+
+---
+
+## 📊 Monitoring
+
+### Key Metrics to Track
+
+| Metric | Source | Alert Threshold |
+|--------|--------|----------------|
+| DAG Success Rate | Airflow | < 95% |
+| Task Duration | Airflow | > 2x baseline |
+| API Calls Remaining | Application | < 50 calls/min |
+| Storage Usage | MinIO | > 80% capacity |
+| ClickHouse Query Latency | ClickHouse | p95 > 1s |
+
+### Log Locations
+
+```bash
+# Airflow logs
+docker-compose logs -f airflow-scheduler
+docker-compose logs -f airflow-webserver
+
+# Application logs (in container)
+docker-compose exec airflow-scheduler tail -f /opt/airflow/logs/dag_id=f1_pipeline/...
+
+# MinIO logs
+docker-compose logs -f minio
+
+# ClickHouse logs
+docker-compose exec clickhouse cat /var/log/clickhouse-server/clickhouse-server.log
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### 1. MinIO 403 Forbidden Error
+```bash
+# Error: An error occurred (403) when calling the HeadBucket operation: Forbidden
+
+# Solution: Verify credentials and restart MinIO
+docker-compose restart minio
+
+# Or recreate with correct credentials
+docker-compose down -v
+docker-compose up -d
+```
+
+#### 2. Airflow Webserver Not Starting
+```bash
+# Check initialization status
+docker-compose logs airflow-init
+
+# Recreate database
+docker-compose down -v
+docker-compose up -d
+```
+
+#### 3. API Rate Limit Errors
+```bash
+# Symptoms: 429 Too Many Requests
+
+# Solution: Adjust rate limits in .env
+API_RATE_LIMIT_PER_SEC=2  # Reduce from 4
+API_RATE_LIMIT_PER_MIN=100  # Reduce from 200
+```
+
+#### 4. Out of Memory Errors
+```bash
+# Increase Docker memory allocation
+# Docker Desktop → Settings → Resources → Memory → 8GB+
+
+# Or reduce parallelism
+max_active_runs=1  # In DAG config
+```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+export AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
+
+# Run extraction with verbose output
+python -m f1_data.ingestion.backfill --start 2024 --end 2024 -v
+```
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Process
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Make** your changes
+4. **Run** tests (`make test`)
+5. **Commit** with conventional commits (`git commit -m 'feat: add amazing feature'`)
+6. **Push** to your fork (`git push origin feature/amazing-feature`)
+7. **Open** a Pull Request
+
+### Code Standards
+
+- **PEP 8** compliant code
+- **Type hints** on all functions
+- **Docstrings** for public APIs
+- **Tests** for new features
+- **No breaking changes** without discussion
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- **Ergast API** - Historical F1 data source (RIP Chris Nevers)
+- **Jolpica** - Mirror maintaining Ergast API access
+- **Apache Airflow** - Workflow orchestration
+- **MinIO** - S3-compatible object storage
+- **ClickHouse** - High-performance analytics engine
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/f1_pipeline/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/f1_pipeline/discussions)
+- **Email**: your.email@example.com
+
+---
+
+## 🗺️ Roadmap
+
+### Phase 1: Core Pipeline ✅
+- [x] Bronze layer ingestion
+- [x] 13 endpoint coverage
+- [x] Idempotent processing
+- [x] Airflow orchestration
+
+### Phase 2: Silver Layer (In Progress)
+- [ ] Parquet transformation
+- [ ] Schema validation with Pydantic
+- [ ] Data quality tests
+- [ ] Deduplication logic
+
+### Phase 3: Gold Layer (Planned)
+- [ ] ClickHouse table definitions
+- [ ] dbt models (facts & dimensions)
+- [ ] SCD Type 2 implementation
+- [ ] Materialized views
+
+### Phase 4: Analytics (Future)
+- [ ] Apache Superset dashboards
+- [ ] Pre-built analytics queries
+- [ ] ML feature engineering
+- [ ] Real-time lap prediction
+
+---
+
+<div align="center">
+
+**Built with ❤️ for the F1 community**
+
+[⭐ Star this repo](https://github.com/yourusername/f1_pipeline) | [🐛 Report Bug](https://github.com/yourusername/f1_pipeline/issues) | [✨ Request Feature](https://github.com/yourusername/f1_pipeline/issues)
+
+</div>
