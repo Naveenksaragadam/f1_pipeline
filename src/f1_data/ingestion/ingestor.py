@@ -335,7 +335,6 @@ class F1DataIngestor:
 
                 # 6. Save to MinIO
                 self._save_to_minio(response_data, s3_key, metadata)
-                logger.info(f"✅ Saved {s3_key}")
 
                 # 7. Break conditions
                 # We stop if it's not paginated OR if we have fetched the last items
