@@ -1,12 +1,13 @@
-# src/f1_data/ingestion/ingestor.py
+# src/f1_data/ingestion/ingestor2.py
 """
 F1 Data Ingestor - Production-Grade Implementation
 Handles API extraction with retry logic, rate limiting, and idempotent writes.
 """
 import logging
 from requests import RequestException
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -51,8 +52,9 @@ class F1DataIngestor:
     Features:
     - Idempotent writes (skip existing files by default)
     - Force refresh for current season data
-    - Automatic pagination handling
+    - Concurrent pagination handling
     - Comprehensive error handling and retry logic
+    - S3 metadata tagging for queryability
     - Detailed stats tracking
     """
 
@@ -168,12 +170,12 @@ class F1DataIngestor:
         metadata: Dict[str, Any]
     ) -> None:
         """
-        Save data to MinIO with metadata envelope.
+        Save data to MinIO with metadata envelope and S3 object tags.
 
         Args:
             data: API response data
             path: S3 object key
-            metadata: Ingestion metadata
+            metadata: Ingestion metadata (also stored as S3 tags for queryability)
             
         Raises:
             Exception: On S3/MinIO storage failures
@@ -183,8 +185,18 @@ class F1DataIngestor:
             "data": data,
         }
 
+        # Extract S3 object metadata for tagging (enables querying without downloading)
+        s3_metadata = {
+            "batch_id": str(metadata["batch_id"]),
+            "endpoint": str(metadata["endpoint"]),
+            "ingestion_timestamp": str(metadata["ingestion_timestamp"]),
+            "season": str(metadata.get("season", "")),
+            "round": str(metadata.get("round", "")),
+            "page": str(metadata.get("page", "")),
+        }
+
         try:
-            self.store.put_object(path, envelope)
+            self.store.put_object(path, envelope, metadata=s3_metadata)
             self.stats["files_written"] += 1
             logger.info(f"✅ Saved: {path}")
         except Exception as e:
@@ -237,6 +249,75 @@ class F1DataIngestor:
             self.stats["errors_encountered"] += 1
             raise
 
+    def _fetch_and_save_page(
+        self,
+        endpoint_name: str,
+        batch_id: str,
+        full_url: str,
+        season: Optional[int],
+        round_num: Optional[int],
+        page: int,
+        limit: int,
+        offset: int,
+        force_refresh: bool
+    ) -> Tuple[bool, int]:
+        """
+        Fetch and save a single page (used for concurrent processing).
+        
+        Args:
+            endpoint_name: Endpoint identifier
+            batch_id: Batch identifier
+            full_url: Full API URL
+            season: Optional season
+            round_num: Optional round number
+            page: Page number
+            limit: Page size
+            offset: Pagination offset
+            force_refresh: Whether to force refresh
+            
+        Returns:
+            Tuple of (success: bool, total_records: int)
+        """
+        try:
+            s3_key = self._generate_path(
+                endpoint_name, batch_id, season, round_num, page
+            )
+
+            # Check if file exists
+            if not force_refresh and self.store.object_exists(s3_key):
+                logger.warning(f"Skipping {s3_key} (already exists)")
+                self.stats["files_skipped"] += 1
+                return (True, 0)
+
+            # Fetch data
+            response_data = self.fetch_page(full_url, limit, offset)
+            mr_data = response_data.get("MRData", {})
+            total_records = int(mr_data.get("total", 0))
+
+            # Build metadata
+            metadata = {
+                "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
+                "batch_id": batch_id,
+                "endpoint": endpoint_name,
+                "season": season,
+                "round": round_num,
+                "page": page,
+                "source_url": f"{full_url}?limit={limit}&offset={offset}",
+                "api_response_total": total_records,
+                "file_version": "1.0",
+                "force_refresh": force_refresh,
+            }
+
+            # Save to MinIO
+            self._save_to_minio(response_data, s3_key, metadata)
+
+            return (True, total_records)
+
+        except Exception as e:
+            logger.error(f"Failed processing {endpoint_name} page {page}: {e}")
+            self.stats["errors_encountered"] += 1
+            return (False, 0)
+
     def ingest_endpoint(
         self,
         endpoint_name: str,
@@ -244,6 +325,7 @@ class F1DataIngestor:
         season: Optional[int] = None,
         round_num: Optional[int] = None,
         force_refresh: bool = False,
+        max_workers: int = 2,
     ) -> None:
         """
         Ingest data from a specific API endpoint with pagination support.
@@ -254,6 +336,7 @@ class F1DataIngestor:
             season: Optional season filter (e.g., 2024)
             round_num: Optional round filter (e.g., 5)
             force_refresh: If True, re-fetch even if files exist
+            max_workers: Number of concurrent workers for pagination (default: 2)
             
         Raises:
             ValueError: If endpoint_name not found in config
@@ -273,11 +356,8 @@ class F1DataIngestor:
         full_url = f"{self.base_url}/{url_path}"
 
         # Pagination setup
-        page = 1
-        offset = 0
         limit = DEFAULT_LIMIT
         is_paginated = config.get("pagination", True)
-
         refresh_mode = "FORCE_REFRESH" if force_refresh else "IDEMPOTENT"
 
         logger.info(
@@ -286,66 +366,56 @@ class F1DataIngestor:
             f"Mode: {refresh_mode}"
         )
 
-        # Pagination loop
-        while True:
-            try:
-                # Generate S3 path
-                s3_key = self._generate_path(
-                    endpoint_name, batch_id, season, round_num, page
+        # Fetch first page to get total records
+        first_page_success, total_records = self._fetch_and_save_page(
+            endpoint_name, batch_id, full_url, season, round_num,
+            page=1, limit=limit, offset=0, force_refresh=force_refresh
+        )
+
+        if not first_page_success:
+            raise Exception(f"Failed to fetch first page of {endpoint_name}")
+
+        # If not paginated or only one page, we're done
+        if not is_paginated or total_records <= limit:
+            logger.info(
+                f"Completed {endpoint_name} | "
+                f"Total records: {total_records} | Pages: 1"
+            )
+            return
+
+        # Calculate remaining pages
+        total_pages = (total_records + limit - 1) // limit
+        remaining_pages = list(range(2, total_pages + 1))
+
+        logger.info(f"Fetching {len(remaining_pages)} additional pages concurrently (max_workers={max_workers})")
+
+        # Fetch remaining pages concurrently
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for page in remaining_pages:
+                offset = (page - 1) * limit
+                future = executor.submit(
+                    self._fetch_and_save_page,
+                    endpoint_name, batch_id, full_url, season, round_num,
+                    page, limit, offset, force_refresh
                 )
+                futures.append((page, future))
 
-                # Check if file exists (optimistic skip)
-                if not force_refresh and self.store.object_exists(s3_key):
-                    logger.warning(f"⏭️  Skipping {s3_key} (already exists)")
-                    self.stats["files_skipped"] += 1 
-                    offset += limit
-                    page += 1
-                    continue
+            # Process results as they complete
+            for page, future in futures:
+                try:
+                    success, _ = future.result()
+                    if not success:
+                        logger.warning(f"Page {page} failed but continuing")
+                except Exception as e:
+                    logger.error(f"Page {page} raised exception: {e}")
+                    self.stats["errors_encountered"] += 1
 
-                # Fetch data from API
-                logger.info(f"📥 Fetching: {full_url} (Offset: {offset})")
-                response_data = self.fetch_page(full_url, limit, offset)
-
-                # Extract total records
-                mr_data = response_data.get("MRData", {})
-                total_records = int(mr_data.get("total", 0))
-
-                # Build metadata
-                metadata = {
-                    "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
-                    "batch_id": batch_id,
-                    "endpoint": endpoint_name,
-                    "season": season,
-                    "round": round_num,
-                    "page": page,
-                    "source_url": f"{full_url}?limit={limit}&offset={offset}",
-                    "api_response_total": total_records,
-                    "file_version": "1.0",
-                    "force_refresh": force_refresh,
-                }
-
-                # Save to MinIO
-                self._save_to_minio(response_data, s3_key, metadata)
-
-                # Check if we're done with pagination
-                if not is_paginated or (offset + limit >= total_records):
-                    logger.info(
-                        f"✅ Completed {endpoint_name} | "
-                        f"Total records: {total_records} | "
-                        f"Pages: {page}"
-                    )
-                    break
-
-                # Move to next page
-                offset += limit
-                page += 1
-
-            except Exception as e:
-                logger.error(
-                    f"❌ Failed processing {endpoint_name} "
-                    f"page {page}: {e}"
-                )
-                raise
+        logger.info(
+            f"Completed {endpoint_name} | "
+            f"Total records: {total_records} | "
+            f"Pages: {total_pages}"
+        )
 
     def run_full_extraction(
         self, 
