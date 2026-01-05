@@ -6,8 +6,7 @@ import io
 import json
 import gzip
 import boto3
-import base64
-import hashlib
+
 import logging
 from botocore.client import Config
 from contextlib import contextmanager
@@ -194,7 +193,7 @@ class F1ObjectStore:
         compress: bool = True
     ) -> None:
         """
-        Upload object to S3/MinIO with Gzip compression and MD5 integrity checks.
+        Upload object to S3/MinIO with optional Gzip compression.
 
         Args:
             key: S3 object key (path)
@@ -220,8 +219,7 @@ class F1ObjectStore:
         elif isinstance(body, (bytes, bytearray, memoryview)):
             data = bytes(body)
         else:
-            # Handle file-like objects: Read into memory for compression/hashing
-            # We use getattr to safely check for 'read' without triggering type errors
+            # Handle file-like objects: Read into memory for compression
             read_method = getattr(body, 'read', None)
             if callable(read_method):
                 content = read_method()
@@ -244,19 +242,13 @@ class F1ObjectStore:
             data = gzip.compress(data, compresslevel=9)
             extra_args['ContentEncoding'] = 'gzip'
 
-        # Calculate MD5 Checksum (Data Integrity)
-        # S3 calculates its own hash and rejects upload if they don't match
-        md5_hash = hashlib.md5(data).digest()
-        md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
-        extra_args['ContentMD5'] = md5_b64
-
         # Prepare Metadata
         extra_args['ContentType'] = content_type
         if metadata:
             extra_args['Metadata'] = metadata
 
         try:
-            # Upload via upload_fileobj
+            # Upload via upload_fileobj (boto3 handles integrity checks via ETag)
             fileobj = io.BytesIO(data)
             
             self.client.upload_fileobj(
