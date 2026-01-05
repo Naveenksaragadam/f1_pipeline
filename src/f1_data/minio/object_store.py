@@ -3,21 +3,17 @@
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """
 import io
-import os
 import json
 import gzip
 import boto3
+
 import logging
 from botocore.client import Config
 from contextlib import contextmanager
-from typing import Any, Dict, List, Union, Optional, Tuple, BinaryIO
+from typing import Any, Dict, List, Union, Optional, Tuple, IO
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
-
-# Size threshold for automatic upload strategy selection
-STREAMING_THRESHOLD_MB = 50
-STREAMING_THRESHOLD_BYTES = STREAMING_THRESHOLD_MB * 1024 * 1024
 
 
 class F1ObjectStore:
@@ -29,20 +25,7 @@ class F1ObjectStore:
     - Automatic bucket creation
     - Retry logic on transient failures
     - Type-safe serialization
-    - Gzip compression support
-    - MD5 integrity checks
-    - Streaming for large files
     - Comprehensive error handling
-    
-    Usage:
-        store = F1ObjectStore("my-bucket", "http://minio:9000", "key", "secret")
-        
-        # Small objects (< 50MB)
-        store.put_object("path/data.json", {"key": "value"})
-        
-        # Large files (> 50MB)
-        with open("large.parquet", "rb") as f:
-            store.upload_stream("path/large.parquet", f, content_type="application/parquet")
     """
 
     def __init__(
@@ -182,81 +165,92 @@ class F1ObjectStore:
                 )
                 logger.debug(f"Deleted {len(objects)} objects from {self.bucket_name}")
 
-    def _serialize_to_bytes(
+    def _serialize_body(
         self, 
-        body: Union[Dict, List, str, bytes, bytearray]
-    ) -> Tuple[bytes, str]:
+        body: Union[Dict, List, str, bytes]
+    ) -> Tuple[Union[str, bytes], str]:
         """
-        Serialize data to bytes for S3 upload.
+        Serialize data for S3 upload.
         
         Args:
             body: Data to serialize
             
         Returns:
-            Tuple of (serialized_bytes, content_type)
+            Tuple of (serialized_body, content_type)
         """
         if isinstance(body, (dict, list)):
-            # Minify JSON (remove whitespace for smaller size)
-            json_str = json.dumps(body, separators=(',', ':'))
-            return (json_str.encode('utf-8'), 'application/json')
-        elif isinstance(body, str):
-            return (body.encode('utf-8'), 'text/plain')
-        elif isinstance(body, (bytes, bytearray)):
-            return (bytes(body), 'application/octet-stream')
+            return (json.dumps(body), 'application/json')
+        elif isinstance(body, bytes):
+            return (body, 'application/octet-stream')
         else:
-            # Fallback for unknown types
-            return (str(body).encode('utf-8'), 'text/plain')
+            return (str(body), 'text/plain')
 
     def put_object(
         self, 
         key: str, 
-        body: Union[Dict, List, str, bytes, bytearray],
+        body: Union[Dict, List, str, bytes, bytearray, memoryview, IO, io.BytesIO],
         metadata: Optional[Dict[str, str]] = None,
-        compress: bool = False
+        compress: bool = True
     ) -> None:
         """
-        Upload small objects (< 50MB) with optional compression and integrity checks.
-
-        Best For: Bronze Layer JSON, Configs, Small files
-        Features: Optional Gzip compression, MD5 checksum, JSON minification
-        
-        Note: Loads entire object into memory. For files > 50MB, use upload_stream().
+        Upload object to S3/MinIO with optional Gzip compression.
 
         Args:
             key: S3 object key (path)
-            body: Content to upload (dict, list, str, bytes, or bytearray)
+            body: Content to upload (supports dict, list, str, bytes, or file-like object)
             metadata: Optional S3 metadata tags
-            compress: If True, applies Gzip compression (default: False for Bronze JSON readability)
+            compress: If True, compresses data with Gzip (Level 9)
 
         Raises:
             ClientError: On S3 errors
             BotoCoreError: On SDK/network errors
-            
-        Example:
-            # JSON data (automatically minified)
-            store.put_object("data.json", {"key": "value"})
-            
-            # Compressed JSON
-            store.put_object("data.json.gz", {"key": "value"}, compress=True)
         """
-        # Serialize to bytes
-        data, content_type = self._serialize_to_bytes(body)
+        # Standardize input to bytes (In-memory processing for Bronze/JSON)
+        data: bytes  # Explicit type hint to satisfy linter
+        content_type = 'application/octet-stream'
+        
+        if isinstance(body, (dict, list)):
+            # Minify JSON (separators removes space) -> Encode to bytes
+            data = json.dumps(body, separators=(',', ':')).encode('utf-8')
+            content_type = 'application/json'
+        elif isinstance(body, str):
+            data = body.encode('utf-8')
+            content_type = 'text/plain'
+        elif isinstance(body, (bytes, bytearray, memoryview)):
+            data = bytes(body)
+        else:
+            # Handle file-like objects: Read into memory for compression
+            read_method = getattr(body, 'read', None)
+            if callable(read_method):
+                content = read_method()
+                if isinstance(content, str):
+                    data = content.encode('utf-8')
+                elif isinstance(content, (bytes, bytearray, memoryview)):
+                    data = bytes(content)
+                else:
+                    # Fallback for weird return types (e.g. from custom objects)
+                    data = str(content).encode('utf-8')
+            else:
+                # Absolute fallback if it's not a known type
+                data = str(body).encode('utf-8')
 
-        # Apply Gzip compression if requested
-        extra_args: Dict[str, Any] = {'ContentType': content_type}
+        # Apply Gzip Compression (if requested)
+        extra_args: Dict[str, Any] = {}
         
         if compress:
-            # Level 9 = Maximum compression (best for archival)
+            # Level 9 = Maximum compression (Best for archival)
             data = gzip.compress(data, compresslevel=9)
             extra_args['ContentEncoding'] = 'gzip'
 
-        # Add custom metadata
+        # Prepare Metadata
+        extra_args['ContentType'] = content_type
         if metadata:
             extra_args['Metadata'] = metadata
 
         try:
-            # Upload via fileobj interface (more efficient than put_object)
+            # Upload via upload_fileobj (boto3 handles integrity checks via ETag)
             fileobj = io.BytesIO(data)
+            
             self.client.upload_fileobj(
                 fileobj,
                 self.bucket_name,
@@ -264,6 +258,7 @@ class F1ObjectStore:
                 ExtraArgs=extra_args
             )
 
+            # Logging
             logger.debug(
                 f"✅ Uploaded {key} | "
                 f"Size: {len(data):,} bytes | "
@@ -280,77 +275,6 @@ class F1ObjectStore:
                 f"Message: {error.get('Message')}"
             )
             raise
-        except BotoCoreError as e:
-            logger.error(
-                f"❌ BotoCoreError - "
-                f"Bucket: {self.bucket_name}, "
-                f"Key: {key}, "
-                f"Error: {str(e)}"
-            )
-            raise
-
-    def upload_stream(
-        self, 
-        key: str, 
-        fileobj: BinaryIO,
-        content_type: str = 'application/octet-stream',
-        metadata: Optional[Dict[str, str]] = None
-    ) -> None:
-        """
-        Stream large files (> 50MB) directly to S3 without loading into RAM.
-        
-        Best For: Silver/Gold Layers, Parquet files, Large CSVs
-        Features: Multipart uploads (automatic via boto3), constant memory usage
-        
-        Note: File object must be opened in binary mode ('rb').
-
-        Args:
-            key: S3 object key
-            fileobj: Binary file-like object to stream (must support .read())
-            content_type: MIME type of the file
-            metadata: Optional S3 metadata tags
-
-        Raises:
-            ClientError: On S3 errors
-            BotoCoreError: On SDK/network errors
-            
-        Example:
-            # Stream large Parquet file
-            with open("large_file.parquet", "rb") as f:
-                store.upload_stream(
-                    "silver/data.parquet", 
-                    f, 
-                    content_type="application/parquet"
-                )
-        """
-        # Prepare metadata
-        extra_args: Dict[str, Any] = {'ContentType': content_type}
-        if metadata:
-            extra_args['Metadata'] = metadata
-
-        try:
-            # Upload via upload_fileobj (handles multipart automatically for large files)
-            self.client.upload_fileobj(
-                fileobj,
-                self.bucket_name,
-                key,
-                ExtraArgs=extra_args
-            )
-            
-            # Log with best-effort size calculation
-            size_str = self._get_fileobj_size_str(fileobj)
-            logger.debug(f"✅ Streamed {key} {size_str}")
-            
-        except ClientError as e:
-            error = e.response.get("Error", {})
-            logger.error(
-                f"❌ S3 ClientError - "
-                f"Bucket: {self.bucket_name}, "
-                f"Key: {key}, "
-                f"Code: {error.get('Code')}, "
-                f"Message: {error.get('Message')}"
-            )
-            raise
 
         except BotoCoreError as e:
             logger.error(
@@ -360,42 +284,6 @@ class F1ObjectStore:
                 f"Error: {str(e)}"
             )
             raise
-
-    def _get_fileobj_size_str(self, fileobj: Any) -> str:
-        """
-        Best-effort attempt to get file size for logging.
-        
-        Args:
-            fileobj: File-like object
-            
-        Returns:
-            Formatted size string or empty string if unavailable
-        """
-        try:
-            # Try BytesIO buffer size
-            if hasattr(fileobj, 'getbuffer'):
-                buffer = fileobj.getbuffer()
-                if hasattr(buffer, 'nbytes'):
-                    return f"({buffer.nbytes:,} bytes)"
-            
-            # Try file descriptor stat
-            if hasattr(fileobj, 'fileno'):
-                size = os.fstat(fileobj.fileno()).st_size
-                return f"({size:,} bytes)"
-            
-            # Try tell/seek method
-            if hasattr(fileobj, 'tell') and hasattr(fileobj, 'seek'):
-                current_pos = fileobj.tell()
-                fileobj.seek(0, os.SEEK_END)
-                size = fileobj.tell()
-                fileobj.seek(current_pos)  # Restore position
-                return f"({size:,} bytes)"
-                
-        except Exception:
-            # Silent failure - size logging is not critical
-            pass
-        
-        return ""
 
     def object_exists(self, key: str) -> bool:
         """
@@ -435,10 +323,6 @@ class F1ObjectStore:
             
         Returns:
             List of object keys
-            
-        Example:
-            # List all race results
-            keys = store.list_objects("ergast/endpoint=results/")
         """
         try:
             paginator = self.client.get_paginator('list_objects_v2')
@@ -467,8 +351,6 @@ class F1ObjectStore:
         """
         Download object from S3/MinIO.
         
-        Note: Loads entire object into memory. For large files, use stream_object().
-        
         Args:
             key: S3 object key
             
@@ -486,40 +368,26 @@ class F1ObjectStore:
         except ClientError as e:
             logger.error(f"❌ Failed to get object {key}: {e}")
             raise
-    
     @contextmanager
     def stream_object(self, key: str):
         """
         Stream object content to avoid loading large files into memory.
         
-        Use this context manager for processing large files line-by-line or in chunks.
-        
         Args:
             key: S3 object key
             
         Yields:
-            StreamingBody: File-like object supporting .read(), .readline(), .iter_lines()
+            File-like object (StreamingBody) of the content
             
         Raises:
             ClientError: If object not found or access denied
-            
-        Example:
-            # Process large file line by line
-            with store.stream_object("large_file.json") as stream:
-                for line in stream.iter_lines():
-                    process(line)
         """
-        response = None
         try:
             response = self.client.get_object(Bucket=self.bucket_name, Key=key)
             yield response['Body']
         except ClientError as e:
             logger.error(f"❌ Failed to stream {key}: {e}")
             raise
-        finally:
-            # Ensure body is closed if response was created
-            if response is not None:
-                response['Body'].close()
 
     def get_json(self, key: str) -> Dict[str, Any]:
         """
@@ -573,11 +441,6 @@ class F1ObjectStore:
             
         Raises:
             ClientError: If object not found
-            
-        Example:
-            metadata = store.get_object_metadata("data.json")
-            print(f"Size: {metadata['size']} bytes")
-            print(f"Last modified: {metadata['last_modified']}")
         """
         try:
             response = self.client.head_object(Bucket=self.bucket_name, Key=key)
@@ -585,51 +448,10 @@ class F1ObjectStore:
                 'size': response.get('ContentLength', 0),
                 'last_modified': response.get('LastModified'),
                 'content_type': response.get('ContentType'),
-                'content_encoding': response.get('ContentEncoding'),
                 'etag': response.get('ETag'),
                 'metadata': response.get('Metadata', {})
             }
             return metadata
         except ClientError as e:
             logger.error(f"❌ Failed to get metadata for {key}: {e}")
-            raise
-    
-    def copy_object(
-        self,
-        source_key: str,
-        dest_key: str,
-        source_bucket: Optional[str] = None
-    ) -> None:
-        """
-        Copy an object within the same bucket or from another bucket.
-        
-        Args:
-            source_key: Source object key
-            dest_key: Destination object key
-            source_bucket: Optional source bucket (defaults to current bucket)
-            
-        Raises:
-            ClientError: On S3 errors
-            
-        Example:
-            # Copy within same bucket
-            store.copy_object("old/path.json", "new/path.json")
-            
-            # Copy from another bucket
-            store.copy_object("path.json", "new/path.json", source_bucket="other-bucket")
-        """
-        try:
-            source_bucket = source_bucket or self.bucket_name
-            copy_source = {'Bucket': source_bucket, 'Key': source_key}
-            
-            self.client.copy_object(
-                CopySource=copy_source,
-                Bucket=self.bucket_name,
-                Key=dest_key
-            )
-            
-            logger.info(f"Copied {source_bucket}/{source_key} to {self.bucket_name}/{dest_key}")
-            
-        except ClientError as e:
-            logger.error(f"Failed to copy object: {e}")
             raise
