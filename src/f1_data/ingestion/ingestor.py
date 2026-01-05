@@ -5,8 +5,8 @@ Handles API extraction with retry logic, rate limiting, and idempotent writes.
 """
 import logging
 from requests import RequestException
-from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Dict, Any, Optional, List
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -366,10 +366,11 @@ class F1DataIngestor:
         Orchestrate full season extraction following dependency graph.
         
         Extraction order:
-        1. Season-level data (constructors, drivers, races)
-        2. Race calendar parsing
-        3. Race-level data (results, qualifying, laps, pitstops, sprint)
-        4. Standings (driver, constructor)
+        1. Reference data (seasons, circuits, status)
+        2. Season-level data (constructors, drivers, races)
+        3. Race calendar parsing
+        4. Race-level data (results, qualifying, laps, pitstops, sprint)
+        5. Standings (driver, constructor)
         
         Args:
             season: F1 season year (e.g., 2024)
@@ -378,6 +379,9 @@ class F1DataIngestor:
             
         Returns:
             Dictionary containing extraction statistics
+            
+        Raises:
+            Exception: On critical extraction failures
         """
         logger.info(
             f"\n{'=' * 70}\n"
@@ -389,57 +393,78 @@ class F1DataIngestor:
         )
 
         self._reset_stats()
-        start_time = datetime.now()
+        extraction_start = datetime.now()
+        
+        # Track timing for each phase
+        phase_timings = {}
+        round_timings = []
 
         try:
-            # Step 1: Season-Level Reference (Constructors, Drivers)
-            # Note: We skip 'Static' here (Seasons/Circuits) as they are usually separate
+            # Phase 1: Season-level data
+            phase_start = datetime.now()
             logger.info("\n--- Phase 1: Season-Level Data ---")
+            
             for endpoint in ["constructors", "drivers", "races"]:
+                endpoint_start = datetime.now()
+                
                 self.ingest_endpoint(
                     endpoint, 
                     batch_id, 
                     season=season, 
                     force_refresh=force_refresh
                 )
+                
+                endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                logger.info(f"   ✓ {endpoint}: {endpoint_duration:.2f}s")
+            
+            phase_timings['season_data'] = (datetime.now() - phase_start).total_seconds()
+            logger.info(f"✅ Phase 1 Complete: {phase_timings['season_data']:.2f}s")
 
-            # Step 2: Get the Calendar to determine Rounds
-            # We assume we just ingested 'races' (Schedule), so we can fetch it or just re-fetch quickly.
-            # For simplicity in this function, we fetch the schedule again to parse it.
+            # Phase 2: Fetch race calendar
+            phase_start = datetime.now()
             logger.info("\n--- Phase 2: Race Calendar ---")
+            
             schedule_url = f"{self.base_url}/{season}.json"
             schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
             races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
 
             total_rounds = len(races_list)
-            logger.info(f"📅 Found {len(races_list)} rounds for season {season}")
+            logger.info(f"📅 Found {total_rounds} rounds for season {season}")
+            
+            phase_timings['calendar_fetch'] = (datetime.now() - phase_start).total_seconds()
+            logger.info(f"✅ Phase 2 Complete: {phase_timings['calendar_fetch']:.2f}s")
 
             if total_rounds == 0:
                 logger.warning(f"⚠️  No races found for season {season}")
-                return self._generate_summary(start_time)
+                return self._generate_summary(extraction_start, phase_timings, round_timings)
 
-
-            # Step 3: Loop Rounds
-            logger.info("\n--- Phase 3: Race-Level Data ---")
+            # Phase 3: Race-level data extraction
+            logger.info(
+                f"\n{'=' * 70}\n"
+                f"--- Phase 3: Race-Level Data ({total_rounds} rounds) ---\n"
+                f"{'=' * 70}"
+            )
+            
+            race_phase_start = datetime.now()
+            
             for idx, race in enumerate(races_list, 1):
                 round_num = race["round"]
                 race_name = race.get("raceName", "Unknown")
-
+                round_start = datetime.now()
+                
                 logger.info(
-                    f"\n   📍 [{idx}/{total_rounds}] Round {round_num}: {race_name}"
+                    f"\n{'─' * 70}\n"
+                    f"📍 [{idx}/{total_rounds}] Round {round_num}: {race_name}\n"
+                    f"{'─' * 70}"
                 )
 
-                for endpoint in ["results", "qualifying", "laps", "pitstops", "sprint"]:
-                    self.ingest_endpoint(
-                        endpoint,
-                        batch_id,
-                        season=season,
-                        round_num=round_num,
-                        force_refresh=force_refresh,
-                    )
+                # Track endpoint timings for this round
+                endpoint_times = {}
 
-                # Group 4: Standings
-                for endpoint in ["driverstandings", "constructorstandings"]:
+                # Race data endpoints
+                for endpoint in ["results", "qualifying", "laps", "pitstops", "sprint"]:
+                    endpoint_start = datetime.now()
+                    
                     self.ingest_endpoint(
                         endpoint,
                         batch_id,
@@ -447,14 +472,153 @@ class F1DataIngestor:
                         round_num=round_num,
                         force_refresh=force_refresh,
                     )
-            return self._generate_summary(start_time)
+                    
+                    endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                    endpoint_times[endpoint] = endpoint_duration
+                    logger.info(f"   ✓ {endpoint:15s}: {endpoint_duration:6.2f}s")
+
+                # Standings endpoints
+                for endpoint in ["driverstandings", "constructorstandings"]:
+                    endpoint_start = datetime.now()
+                    
+                    self.ingest_endpoint(
+                        endpoint,
+                        batch_id,
+                        season=season,
+                        round_num=round_num,
+                        force_refresh=force_refresh,
+                    )
+                    
+                    endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                    endpoint_times[endpoint] = endpoint_duration
+                    logger.info(f"   ✓ {endpoint:15s}: {endpoint_duration:6.2f}s")
+                
+                # Calculate round duration
+                round_duration = (datetime.now() - round_start).total_seconds()
+                
+                # Find slowest endpoint for this round
+                slowest_endpoint = max(endpoint_times.items(), key=lambda x: x[1])
+                
+                # Store round timing info
+                round_timings.append({
+                    'round': int(round_num),
+                    'race_name': race_name,
+                    'duration': round_duration,
+                    'endpoints': endpoint_times,
+                    'slowest': slowest_endpoint
+                })
+                
+                logger.info(
+                    f"{'─' * 70}\n"
+                    f"✅ Round {round_num} Complete: {round_duration:.2f}s ({round_duration/60:.1f}m)\n"
+                    f"   ⏱️  Slowest: {slowest_endpoint[0]} ({slowest_endpoint[1]:.2f}s)\n"
+                    f"{'─' * 70}"
+                )
+            
+            phase_timings['race_data'] = (datetime.now() - race_phase_start).total_seconds()
+            logger.info(f"✅ Phase 3 Complete: {phase_timings['race_data']:.2f}s")
+            
+            # Generate performance summary
+            self._log_performance_summary(phase_timings, round_timings, total_rounds)
+            
+            return self._generate_summary(extraction_start, phase_timings, round_timings)
         
         except Exception as e:
             logger.error(f"\n❌ Extraction FAILED for season {season}: {e}")
+            summary = self._generate_summary(extraction_start, phase_timings, round_timings)
+            summary["status"] = "FAILED"
+            summary["error_message"] = str(e)
             raise
+
+    def _log_performance_summary(
+        self,
+        phase_timings: Dict[str, float],
+        round_timings: List[Dict],
+        total_rounds: int
+    ) -> None:
+        """
+        Log detailed performance summary.
         
-    def _generate_summary(self, start_time: datetime) -> Dict[str, Any]:
-        """Generate extraction summary with statistics."""
+        Args:
+            phase_timings: Timing for each phase
+            round_timings: Timing for each round
+            total_rounds: Total number of rounds
+        """
+        logger.info(
+            f"\n{'=' * 70}\n"
+            f"📊 PERFORMANCE SUMMARY\n"
+            f"{'=' * 70}"
+        )
+        
+        # Phase breakdown
+        logger.info("\n⏱️  Phase Timings:")
+        for phase, duration in phase_timings.items():
+            logger.info(f"   {phase:20s}: {duration:8.2f}s ({duration/60:5.1f}m)")
+        
+        if not round_timings:
+            return
+        
+        # Round statistics
+        round_durations = [r['duration'] for r in round_timings]
+        avg_round = sum(round_durations) / len(round_durations)
+        min_round = min(round_durations)
+        max_round = max(round_durations)
+        
+        logger.info(
+            f"\n🏁 Round Statistics ({total_rounds} rounds):\n"
+            f"   Average: {avg_round:.2f}s ({avg_round/60:.1f}m)\n"
+            f"   Fastest: {min_round:.2f}s\n"
+            f"   Slowest: {max_round:.2f}s"
+        )
+        
+        # Top 5 slowest rounds
+        slowest_rounds = sorted(round_timings, key=lambda x: x['duration'], reverse=True)[:5]
+        logger.info("\n🐌 Top 5 Slowest Rounds:")
+        for r in slowest_rounds:
+            logger.info(
+                f"   Round {r['round']:2d} ({r['race_name']:20s}): "
+                f"{r['duration']:6.2f}s | "
+                f"Slowest endpoint: {r['slowest'][0]} ({r['slowest'][1]:.2f}s)"
+            )
+        
+        # Endpoint statistics (aggregate across all rounds)
+        endpoint_totals = {}
+        for r in round_timings:
+            for endpoint, duration in r['endpoints'].items():
+                if endpoint not in endpoint_totals:
+                    endpoint_totals[endpoint] = []
+                endpoint_totals[endpoint].append(duration)
+        
+        logger.info("\n📈 Endpoint Statistics (across all rounds):")
+        for endpoint in sorted(endpoint_totals.keys()):
+            durations = endpoint_totals[endpoint]
+            avg = sum(durations) / len(durations)
+            total = sum(durations)
+            logger.info(
+                f"   {endpoint:20s}: "
+                f"Avg: {avg:6.2f}s | "
+                f"Total: {total:7.2f}s ({total/60:5.1f}m)"
+            )
+        
+        logger.info(f"{'=' * 70}")
+
+    def _generate_summary(
+        self,
+        start_time: datetime,
+        phase_timings: Dict[str, float]| None = None,
+        round_timings: List[Dict]| None = None
+    ) -> Dict[str, Any]:
+        """
+        Generate extraction summary with statistics.
+        
+        Args:
+            start_time: Extraction start timestamp
+            phase_timings: Optional phase timing data
+            round_timings: Optional round timing data
+            
+        Returns:
+            Dictionary containing execution metrics
+        """
         duration = (datetime.now() - start_time).total_seconds()
         
         summary = {
@@ -463,10 +627,20 @@ class F1DataIngestor:
             **self.stats
         }
         
+        # Add timing breakdowns if available
+        if phase_timings:
+            summary["phase_timings"] = phase_timings
+        if round_timings:
+            summary["rounds_processed"] = len(round_timings)
+            summary["avg_round_duration"] = round(
+                sum(r['duration'] for r in round_timings) / len(round_timings), 2
+            ) if round_timings else 0
+        
         logger.info(
             f"\n{'=' * 70}\n"
             f"✅ Extraction Complete\n"
-            f"   Duration: {duration:.2f}s\n"
+            f"   Status: {summary['status']}\n"
+            f"   Duration: {duration:.2f}s ({duration/60:.1f}m)\n"
             f"   Files Written: {self.stats['files_written']}\n"
             f"   Files Skipped: {self.stats['files_skipped']}\n"
             f"   API Calls: {self.stats['api_calls_made']}\n"
