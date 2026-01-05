@@ -38,3 +38,6 @@ docs/dev_docs
 .idea/
 *.sublime-workspace
 *.sublime-project
+
+# DS_Store
+*.DS_Store
