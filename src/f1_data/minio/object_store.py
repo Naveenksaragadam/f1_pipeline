@@ -7,8 +7,6 @@ import os
 import json
 import gzip
 import boto3
-import base64
-import hashlib
 import logging
 from botocore.client import Config
 from contextlib import contextmanager
@@ -251,12 +249,6 @@ class F1ObjectStore:
             # Level 9 = Maximum compression (best for archival)
             data = gzip.compress(data, compresslevel=9)
             extra_args['ContentEncoding'] = 'gzip'
-
-        # Calculate MD5 checksum for data integrity
-        # S3 validates this server-side and rejects upload if mismatch
-        md5_hash = hashlib.md5(data).digest()
-        md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
-        extra_args['ContentMD5'] = md5_b64
 
         # Add custom metadata
         if metadata:
