@@ -261,40 +261,23 @@ class F1DataIngestor:
         offset: int,
         force_refresh: bool
     ) -> Tuple[bool, int]:
-        """
-        Fetch and save a single page (used for concurrent processing).
-        
-        Args:
-            endpoint_name: Endpoint identifier
-            batch_id: Batch identifier
-            full_url: Full API URL
-            season: Optional season
-            round_num: Optional round number
-            page: Page number
-            limit: Page size
-            offset: Pagination offset
-            force_refresh: Whether to force refresh
-            
-        Returns:
-            Tuple of (success: bool, total_records: int)
-        """
+        """Fetch and save a single page (used for concurrent processing)."""
         try:
             s3_key = self._generate_path(
                 endpoint_name, batch_id, season, round_num, page
             )
 
-            # Check if file exists
             if not force_refresh and self.store.object_exists(s3_key):
                 logger.warning(f"Skipping {s3_key} (already exists)")
                 self.stats["files_skipped"] += 1
                 return (True, 0)
 
             # Fetch data
+            logger.info(f"Fetching {endpoint_name} page {page} from {full_url}?limit={limit}&offset={offset}")
             response_data = self.fetch_page(full_url, limit, offset)
             mr_data = response_data.get("MRData", {})
             total_records = int(mr_data.get("total", 0))
 
-            # Build metadata
             metadata = {
                 "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
                 "batch_id": batch_id,
@@ -308,16 +291,113 @@ class F1DataIngestor:
                 "force_refresh": force_refresh,
             }
 
-            # Save to MinIO
             self._save_to_minio(response_data, s3_key, metadata)
-
             return (True, total_records)
 
         except Exception as e:
-            logger.error(f"Failed processing {endpoint_name} page {page}: {e}")
+            # LOG THE FULL ERROR WITH TRACEBACK
+            logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
             self.stats["errors_encountered"] += 1
             return (False, 0)
 
+    # def ingest_endpoint(
+    #     self,
+    #     endpoint_name: str,
+    #     batch_id: str,
+    #     season: Optional[int] = None,
+    #     round_num: Optional[int] = None,
+    #     force_refresh: bool = False,
+    #     max_workers: int = 2,
+    # ) -> None:
+    #     """
+    #     Ingest data from a specific API endpoint with pagination support.
+
+    #     Args:
+    #         endpoint_name: API endpoint identifier (must exist in ENDPOINT_CONFIG)
+    #         batch_id: Unique batch identifier for this ingestion run
+    #         season: Optional season filter (e.g., 2024)
+    #         round_num: Optional round filter (e.g., 5)
+    #         force_refresh: If True, re-fetch even if files exist
+    #         max_workers: Number of concurrent workers for pagination (default: 2)
+            
+    #     Raises:
+    #         ValueError: If endpoint_name not found in config
+    #         Exception: On API or storage failures
+    #     """
+    #     # Validate endpoint config exists
+    #     config = ENDPOINT_CONFIG.get(endpoint_name)
+    #     if not config:
+    #         raise ValueError(
+    #             f"Unknown endpoint '{endpoint_name}'. "
+    #             f"Valid endpoints: {list(ENDPOINT_CONFIG.keys())}"
+    #         )
+
+    #     # Build URL
+    #     url_pattern = config["url_pattern"]
+    #     url_path = url_pattern.format(season=season or "", round=round_num or "")
+    #     full_url = f"{self.base_url}/{url_path}"
+
+    #     # Pagination setup
+    #     limit = DEFAULT_LIMIT
+    #     is_paginated = config.get("pagination", True)
+    #     refresh_mode = "FORCE_REFRESH" if force_refresh else "IDEMPOTENT"
+
+    #     logger.info(
+    #         f"🚀 Starting: {endpoint_name} | "
+    #         f"Season: {season} | Round: {round_num} | "
+    #         f"Mode: {refresh_mode}"
+    #     )
+
+    #     # Fetch first page to get total records
+    #     first_page_success, total_records = self._fetch_and_save_page(
+    #         endpoint_name, batch_id, full_url, season, round_num,
+    #         page=1, limit=limit, offset=0, force_refresh=force_refresh
+    #     )
+
+    #     if not first_page_success:
+    #         raise Exception(f"Failed to fetch first page of {endpoint_name}")
+
+    #     # If not paginated or only one page, we're done
+    #     if not is_paginated or total_records <= limit:
+    #         logger.info(
+    #             f"Completed {endpoint_name} | "
+    #             f"Total records: {total_records} | Pages: 1"
+    #         )
+    #         return
+
+    #     # Calculate remaining pages
+    #     total_pages = (total_records + limit - 1) // limit
+    #     remaining_pages = list(range(2, total_pages + 1))
+
+    #     logger.info(f"Fetching {len(remaining_pages)} additional pages concurrently (max_workers={max_workers})")
+
+    #     # Fetch remaining pages concurrently
+    #     with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    #         futures = []
+    #         for page in remaining_pages:
+    #             offset = (page - 1) * limit
+    #             future = executor.submit(
+    #                 self._fetch_and_save_page,
+    #                 endpoint_name, batch_id, full_url, season, round_num,
+    #                 page, limit, offset, force_refresh
+    #             )
+    #             futures.append((page, future))
+
+    #         # Process results as they complete
+    #         for page, future in futures:
+    #             try:
+    #                 success, _ = future.result()
+    #                 if not success:
+    #                     logger.warning(f"Page {page} failed but continuing")
+    #             except Exception as e:
+    #                 logger.error(f"Page {page} raised exception: {e}")
+    #                 self.stats["errors_encountered"] += 1
+
+    #     logger.info(
+    #         f"Completed {endpoint_name} | "
+    #         f"Total records: {total_records} | "
+    #         f"Pages: {total_pages}"
+    #     )
     def ingest_endpoint(
         self,
         endpoint_name: str,
@@ -327,22 +407,7 @@ class F1DataIngestor:
         force_refresh: bool = False,
         max_workers: int = 2,
     ) -> None:
-        """
-        Ingest data from a specific API endpoint with pagination support.
-
-        Args:
-            endpoint_name: API endpoint identifier (must exist in ENDPOINT_CONFIG)
-            batch_id: Unique batch identifier for this ingestion run
-            season: Optional season filter (e.g., 2024)
-            round_num: Optional round filter (e.g., 5)
-            force_refresh: If True, re-fetch even if files exist
-            max_workers: Number of concurrent workers for pagination (default: 2)
-            
-        Raises:
-            ValueError: If endpoint_name not found in config
-            Exception: On API or storage failures
-        """
-        # Validate endpoint config exists
+        # ... (setup code same) ...
         config = ENDPOINT_CONFIG.get(endpoint_name)
         if not config:
             raise ValueError(
@@ -377,45 +442,47 @@ class F1DataIngestor:
 
         # If not paginated or only one page, we're done
         if not is_paginated or total_records <= limit:
-            logger.info(
-                f"Completed {endpoint_name} | "
-                f"Total records: {total_records} | Pages: 1"
-            )
+            logger.info(f"Completed {endpoint_name} | Total records: {total_records} | Pages: 1")
             return
 
         # Calculate remaining pages
         total_pages = (total_records + limit - 1) // limit
         remaining_pages = list(range(2, total_pages + 1))
 
-        logger.info(f"Fetching {len(remaining_pages)} additional pages concurrently (max_workers={max_workers})")
-
-        # Fetch remaining pages concurrently
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
+        # USE THREADING ONLY IF >5 PAGES (otherwise overhead not worth it)
+        if len(remaining_pages) < 5:
+            logger.info(f"Fetching {len(remaining_pages)} pages sequentially (few pages)")
             for page in remaining_pages:
                 offset = (page - 1) * limit
-                future = executor.submit(
-                    self._fetch_and_save_page,
+                success, _ = self._fetch_and_save_page(
                     endpoint_name, batch_id, full_url, season, round_num,
                     page, limit, offset, force_refresh
                 )
-                futures.append((page, future))
+                if not success:
+                    logger.warning(f"Page {page} failed but continuing")
+        else:
+            logger.info(f"Fetching {len(remaining_pages)} pages concurrently (max_workers={max_workers})")
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for page in remaining_pages:
+                    offset = (page - 1) * limit
+                    future = executor.submit(
+                        self._fetch_and_save_page,
+                        endpoint_name, batch_id, full_url, season, round_num,
+                        page, limit, offset, force_refresh
+                    )
+                    futures.append((page, future))
 
-            # Process results as they complete
-            for page, future in futures:
-                try:
-                    success, _ = future.result()
-                    if not success:
-                        logger.warning(f"Page {page} failed but continuing")
-                except Exception as e:
-                    logger.error(f"Page {page} raised exception: {e}")
-                    self.stats["errors_encountered"] += 1
+                for page, future in futures:
+                    try:
+                        success, _ = future.result()
+                        if not success:
+                            logger.warning(f"Page {page} failed but continuing")
+                    except Exception as e:
+                        logger.error(f"Page {page} raised exception: {e}")
+                        self.stats["errors_encountered"] += 1
 
-        logger.info(
-            f"Completed {endpoint_name} | "
-            f"Total records: {total_records} | "
-            f"Pages: {total_pages}"
-        )
+        logger.info(f"Completed {endpoint_name} | Total records: {total_records} | Pages: {total_pages}")
 
     def run_full_extraction(
         self, 
@@ -446,7 +513,7 @@ class F1DataIngestor:
         """
         logger.info(
             f"\n{'=' * 70}\n"
-            f"📦 F1 Data Extraction Started\n"
+            f"F1 Data Extraction Started\n"
             f"   Season: {season}\n"
             f"   Batch ID: {batch_id}\n"
             f"   Force Refresh: {force_refresh}\n"
@@ -454,14 +521,20 @@ class F1DataIngestor:
         )
 
         self._reset_stats()
-        start_time = datetime.now()
+        extraction_start = datetime.now()
+        
+        # Track timing for each phase
+        phase_timings = {}
+        round_timings = []
 
         try:
             # Phase 1: Reference data (static endpoints)
+            phase_start = datetime.now()
             logger.info("\n--- Phase 1: Reference Data ---")
+            
             for endpoint in ["seasons", "circuits", "status"]:
-                # Reference data doesn't need season/round filters
-                # For circuits, we pass season to get season-specific circuits
+                endpoint_start = datetime.now()
+                
                 if endpoint == "circuits":
                     self.ingest_endpoint(
                         endpoint,
@@ -470,48 +543,82 @@ class F1DataIngestor:
                         force_refresh=force_refresh
                     )
                 else:
-                    # seasons and status are truly static
                     self.ingest_endpoint(
                         endpoint,
                         batch_id,
                         force_refresh=force_refresh
                     )
+                
+                endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                logger.info(f"   {endpoint}: {endpoint_duration:.2f}s")
+            
+            phase_timings['reference_data'] = (datetime.now() - phase_start).total_seconds()
+            logger.info(f"Phase 1 Complete: {phase_timings['reference_data']:.2f}s")
             
             # Phase 2: Season-level data
+            phase_start = datetime.now()
             logger.info("\n--- Phase 2: Season-Level Data ---")
+            
             for endpoint in ["constructors", "drivers", "races"]:
+                endpoint_start = datetime.now()
+                
                 self.ingest_endpoint(
                     endpoint, 
                     batch_id, 
                     season=season, 
                     force_refresh=force_refresh
                 )
+                
+                endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                logger.info(f"   {endpoint}: {endpoint_duration:.2f}s")
+            
+            phase_timings['season_data'] = (datetime.now() - phase_start).total_seconds()
+            logger.info(f"Phase 2 Complete: {phase_timings['season_data']:.2f}s")
 
             # Phase 3: Fetch race calendar
+            phase_start = datetime.now()
             logger.info("\n--- Phase 3: Race Calendar ---")
+            
             schedule_url = f"{self.base_url}/{season}.json"
             schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
             races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
 
             total_rounds = len(races_list)
-            logger.info(f"📅 Found {total_rounds} rounds for season {season}")
+            logger.info(f"Found {total_rounds} rounds for season {season}")
+            
+            phase_timings['calendar_fetch'] = (datetime.now() - phase_start).total_seconds()
 
             if total_rounds == 0:
-                logger.warning(f"⚠️  No races found for season {season}")
-                return self._generate_summary(start_time)
+                logger.warning(f"No races found for season {season}")
+                return self._generate_summary(extraction_start, phase_timings, round_timings)
 
             # Phase 4: Race-level data extraction
-            logger.info("\n--- Phase 4: Race-Level Data ---")
+            logger.info(
+                f"\n{'=' * 70}\n"
+                f"--- Phase 4: Race-Level Data ({total_rounds} rounds) ---\n"
+                f"{'=' * 70}"
+            )
+            
+            race_phase_start = datetime.now()
+            
             for idx, race in enumerate(races_list, 1):
                 round_num = int(race["round"])
                 race_name = race.get("raceName", "Unknown")
-
+                round_start = datetime.now()
+                
                 logger.info(
-                    f"\n   📍 [{idx}/{total_rounds}] Round {round_num}: {race_name}"
+                    f"\n{'─' * 70}\n"
+                    f"[{idx}/{total_rounds}] Round {round_num}: {race_name}\n"
+                    f"{'─' * 70}"
                 )
+
+                # Track endpoint timings for this round
+                endpoint_times = {}
 
                 # Race data endpoints
                 for endpoint in ["results", "qualifying", "laps", "pitstops", "sprint"]:
+                    endpoint_start = datetime.now()
+                    
                     self.ingest_endpoint(
                         endpoint,
                         batch_id,
@@ -519,9 +626,15 @@ class F1DataIngestor:
                         round_num=round_num,
                         force_refresh=force_refresh,
                     )
+                    
+                    endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                    endpoint_times[endpoint] = endpoint_duration
+                    logger.info(f"   {endpoint:15s}: {endpoint_duration:6.2f}s")
 
                 # Standings endpoints
                 for endpoint in ["driverstandings", "constructorstandings"]:
+                    endpoint_start = datetime.now()
+                    
                     self.ingest_endpoint(
                         endpoint,
                         batch_id,
@@ -529,23 +642,132 @@ class F1DataIngestor:
                         round_num=round_num,
                         force_refresh=force_refresh,
                     )
+                    
+                    endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+                    endpoint_times[endpoint] = endpoint_duration
+                    logger.info(f"   {endpoint:15s}: {endpoint_duration:6.2f}s")
+                
+                # Calculate round duration
+                round_duration = (datetime.now() - round_start).total_seconds()
+                
+                # Find slowest endpoint for this round
+                slowest_endpoint = max(endpoint_times.items(), key=lambda x: x[1])
+                
+                # Store round timing info
+                round_timings.append({
+                    'round': round_num,
+                    'race_name': race_name,
+                    'duration': round_duration,
+                    'endpoints': endpoint_times,
+                    'slowest': slowest_endpoint
+                })
+                
+                logger.info(
+                    f"{'─' * 70}\n"
+                    f"Round {round_num} Complete: {round_duration:.2f}s ({round_duration/60:.1f}m)\n"
+                    f"   Slowest: {slowest_endpoint[0]} ({slowest_endpoint[1]:.2f}s)\n"
+                    f"{'─' * 70}"
+                )
             
-            return self._generate_summary(start_time)
+            phase_timings['race_data'] = (datetime.now() - race_phase_start).total_seconds()
+            
+            # Generate performance summary
+            self._log_performance_summary(phase_timings, round_timings, total_rounds)
+            
+            return self._generate_summary(extraction_start, phase_timings, round_timings)
         
         except Exception as e:
-            logger.error(f"\n❌ Extraction FAILED for season {season}: {e}")
-            # Generate summary even on failure to capture partial stats
-            summary = self._generate_summary(start_time)
+            logger.error(f"\nExtraction FAILED for season {season}: {e}")
+            summary = self._generate_summary(extraction_start, phase_timings, round_timings)
             summary["status"] = "FAILED"
             summary["error_message"] = str(e)
             raise
+
+    def _log_performance_summary(
+        self,
+        phase_timings: Dict[str, float],
+        round_timings: List[Dict],
+        total_rounds: int
+    ) -> None:
+        """
+        Log detailed performance summary.
         
-    def _generate_summary(self, start_time: datetime) -> Dict[str, Any]:
+        Args:
+            phase_timings: Timing for each phase
+            round_timings: Timing for each round
+            total_rounds: Total number of rounds
+        """
+        logger.info(
+            f"\n{'=' * 70}\n"
+            f"PERFORMANCE SUMMARY\n"
+            f"{'=' * 70}"
+        )
+        
+        # Phase breakdown
+        logger.info("\nPhase Timings:")
+        for phase, duration in phase_timings.items():
+            logger.info(f"   {phase:20s}: {duration:8.2f}s ({duration/60:5.1f}m)")
+        
+        if not round_timings:
+            return
+        
+        # Round statistics
+        round_durations = [r['duration'] for r in round_timings]
+        avg_round = sum(round_durations) / len(round_durations)
+        min_round = min(round_durations)
+        max_round = max(round_durations)
+        
+        logger.info(
+            f"\nRound Statistics ({total_rounds} rounds):\n"
+            f"   Average: {avg_round:.2f}s ({avg_round/60:.1f}m)\n"
+            f"   Fastest: {min_round:.2f}s\n"
+            f"   Slowest: {max_round:.2f}s"
+        )
+        
+        # Top 5 slowest rounds
+        slowest_rounds = sorted(round_timings, key=lambda x: x['duration'], reverse=True)[:5]
+        logger.info("\nTop 5 Slowest Rounds:")
+        for r in slowest_rounds:
+            logger.info(
+                f"   Round {r['round']:2d} ({r['race_name']:20s}): "
+                f"{r['duration']:6.2f}s | "
+                f"Slowest endpoint: {r['slowest'][0]} ({r['slowest'][1]:.2f}s)"
+            )
+        
+        # Endpoint statistics (aggregate across all rounds)
+        endpoint_totals = {}
+        for r in round_timings:
+            for endpoint, duration in r['endpoints'].items():
+                if endpoint not in endpoint_totals:
+                    endpoint_totals[endpoint] = []
+                endpoint_totals[endpoint].append(duration)
+        
+        logger.info("\nEndpoint Statistics (across all rounds):")
+        for endpoint in sorted(endpoint_totals.keys()):
+            durations = endpoint_totals[endpoint]
+            avg = sum(durations) / len(durations)
+            total = sum(durations)
+            logger.info(
+                f"   {endpoint:20s}: "
+                f"Avg: {avg:6.2f}s | "
+                f"Total: {total:7.2f}s ({total/60:5.1f}m)"
+            )
+        
+        logger.info(f"{'=' * 70}")
+
+    def _generate_summary(
+        self,
+        start_time: datetime,
+        phase_timings: Dict[str, float] | None = None,
+    round_timings: List[Dict] | None = None
+    ) -> Dict[str, Any]:
         """
         Generate extraction summary with statistics.
         
         Args:
             start_time: Extraction start timestamp
+            phase_timings: Optional phase timing data
+            round_timings: Optional round timing data
             
         Returns:
             Dictionary containing execution metrics
@@ -558,10 +780,20 @@ class F1DataIngestor:
             **self.stats
         }
         
+        # Add timing breakdowns if available
+        if phase_timings:
+            summary["phase_timings"] = phase_timings
+        if round_timings:
+            summary["rounds_processed"] = len(round_timings)
+            summary["avg_round_duration"] = round(
+                sum(r['duration'] for r in round_timings) / len(round_timings), 2
+            ) if round_timings else 0
+        
         logger.info(
             f"\n{'=' * 70}\n"
-            f"✅ Extraction Complete\n"
-            f"   Duration: {duration:.2f}s\n"
+            f"Extraction Complete\n"
+            f"   Status: {summary['status']}\n"
+            f"   Duration: {duration:.2f}s ({duration/60:.1f}m)\n"
             f"   Files Written: {self.stats['files_written']}\n"
             f"   Files Skipped: {self.stats['files_skipped']}\n"
             f"   API Calls: {self.stats['api_calls_made']}\n"
