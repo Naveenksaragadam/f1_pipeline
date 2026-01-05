@@ -103,7 +103,7 @@ with DAG(
     dag_id="f1_pipeline",
     description="Extract F1 data from Jolpica API to Bronze layer (MinIO)",
     default_args=default_args,
-    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"), 
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"), 
     schedule_interval="@yearly",
     catchup=True,
     max_active_runs=1,  # Sequential execution prevents API rate limits
@@ -118,7 +118,7 @@ with DAG(
     - **Current Season**: Force refresh (penalties/updates may occur)
     
     ## Data Coverage
-    - Seasons: 2024 → Present
+    - Seasons: 2023 → Present
     - Endpoints: 13 (constructors, drivers, races, results, qualifying, etc.)
     - Storage: MinIO `bronze` bucket with Hive-style partitioning
     
