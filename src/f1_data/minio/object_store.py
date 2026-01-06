@@ -2,15 +2,11 @@
 """
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """
-import io
 import json
-import gzip
 import boto3
-
 import logging
 from botocore.client import Config
-from contextlib import contextmanager
-from typing import Any, Dict, List, Union, Optional, Tuple, IO
+from typing import Any, Dict, List, Union, Optional, Tuple
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
@@ -179,7 +175,7 @@ class F1ObjectStore:
             Tuple of (serialized_body, content_type)
         """
         if isinstance(body, (dict, list)):
-            return (json.dumps(body), 'application/json')
+            return (json.dumps(body, indent=2), 'application/json')
         elif isinstance(body, bytes):
             return (body, 'application/octet-stream')
         else:
@@ -188,82 +184,40 @@ class F1ObjectStore:
     def put_object(
         self, 
         key: str, 
-        body: Union[Dict, List, str, bytes, bytearray, memoryview, IO, io.BytesIO],
-        metadata: Optional[Dict[str, str]] = None,
-        compress: bool = True
+        body: Union[Dict, List, str, bytes],
+        metadata: Optional[Dict[str, str]] = None
     ) -> None:
         """
-        Upload object to S3/MinIO with optional Gzip compression.
-
+        Upload object to S3/MinIO.
+        
         Args:
             key: S3 object key (path)
-            body: Content to upload (supports dict, list, str, bytes, or file-like object)
+            body: Content to upload
             metadata: Optional S3 metadata tags
-            compress: If True, compresses data with Gzip (Level 9)
-
+            
         Raises:
             ClientError: On S3 errors
             BotoCoreError: On SDK/network errors
         """
-        # Standardize input to bytes (In-memory processing for Bronze/JSON)
-        data: bytes  # Explicit type hint to satisfy linter
-        content_type = 'application/octet-stream'
-        
-        if isinstance(body, (dict, list)):
-            # Minify JSON (separators removes space) -> Encode to bytes
-            data = json.dumps(body, separators=(',', ':')).encode('utf-8')
-            content_type = 'application/json'
-        elif isinstance(body, str):
-            data = body.encode('utf-8')
-            content_type = 'text/plain'
-        elif isinstance(body, (bytes, bytearray, memoryview)):
-            data = bytes(body)
-        else:
-            # Handle file-like objects: Read into memory for compression
-            read_method = getattr(body, 'read', None)
-            if callable(read_method):
-                content = read_method()
-                if isinstance(content, str):
-                    data = content.encode('utf-8')
-                elif isinstance(content, (bytes, bytearray, memoryview)):
-                    data = bytes(content)
-                else:
-                    # Fallback for weird return types (e.g. from custom objects)
-                    data = str(content).encode('utf-8')
-            else:
-                # Absolute fallback if it's not a known type
-                data = str(body).encode('utf-8')
-
-        # Apply Gzip Compression (if requested)
-        extra_args: Dict[str, Any] = {}
-        
-        if compress:
-            # Level 9 = Maximum compression (Best for archival)
-            data = gzip.compress(data, compresslevel=9)
-            extra_args['ContentEncoding'] = 'gzip'
-
-        # Prepare Metadata
-        extra_args['ContentType'] = content_type
-        if metadata:
-            extra_args['Metadata'] = metadata
+        # Serialize data
+        serialized_body, content_type = self._serialize_body(body)
 
         try:
-            # Upload via upload_fileobj (boto3 handles integrity checks via ETag)
-            fileobj = io.BytesIO(data)
+            put_params = {
+                'Bucket': self.bucket_name,
+                'Key': key,
+                'Body': serialized_body,
+                'ContentType': content_type,
+            }
             
-            self.client.upload_fileobj(
-                fileobj,
-                self.bucket_name,
-                key,
-                ExtraArgs=extra_args
-            )
+            if metadata:
+                put_params['Metadata'] = metadata
+            
+            self.client.put_object(**put_params)
 
-            # Logging
-            logger.debug(
-                f"✅ Uploaded {key} | "
-                f"Size: {len(data):,} bytes | "
-                f"Compressed: {compress}"
-            )
+            # Calculate size for logging
+            size_bytes = len(serialized_body) if isinstance(serialized_body, (str, bytes)) else 0
+            logger.debug(f"✅ Uploaded {key} ({size_bytes:,} bytes)")
 
         except ClientError as e:
             error = e.response.get("Error", {})
@@ -368,27 +322,7 @@ class F1ObjectStore:
         except ClientError as e:
             logger.error(f"❌ Failed to get object {key}: {e}")
             raise
-    @contextmanager
-    def stream_object(self, key: str):
-        """
-        Stream object content to avoid loading large files into memory.
         
-        Args:
-            key: S3 object key
-            
-        Yields:
-            File-like object (StreamingBody) of the content
-            
-        Raises:
-            ClientError: If object not found or access denied
-        """
-        try:
-            response = self.client.get_object(Bucket=self.bucket_name, Key=key)
-            yield response['Body']
-        except ClientError as e:
-            logger.error(f"❌ Failed to stream {key}: {e}")
-            raise
-
     def get_json(self, key: str) -> Dict[str, Any]:
         """
         Download and parse JSON object.
