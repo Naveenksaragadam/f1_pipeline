@@ -31,7 +31,7 @@ __pycache__/
 src/test
 
 # dev docs
-docs/dev_docs
+docs/dev_docs/
 
 # IDE / Editor
 .vscode/
