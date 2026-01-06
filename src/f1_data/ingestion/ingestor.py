@@ -357,10 +357,11 @@ class F1DataIngestor:
         Orchestrate full season extraction following dependency graph.
         
         Extraction order:
-        1. Season-level data (constructors, drivers, races)
-        2. Race calendar parsing
-        3. Race-level data (results, qualifying, laps, pitstops, sprint)
-        4. Standings (driver, constructor)
+        1. Reference data (seasons, circuits, status)
+        2. Season-level data (constructors, drivers, races)
+        3. Race calendar parsing
+        4. Race-level data (results, qualifying, laps, pitstops, sprint)
+        5. Standings (driver, constructor)
         
         Args:
             season: F1 season year (e.g., 2024)
@@ -386,8 +387,28 @@ class F1DataIngestor:
         start_time = datetime.now()
 
         try:
-            # Phase 1: Season-level data
-            logger.info("\n--- Phase 1: Season-Level Data ---")
+            # Phase 1: Reference data (static endpoints)
+            logger.info("\n--- Phase 1: Reference Data ---")
+            for endpoint in ["seasons", "circuits", "status"]:
+                # Reference data doesn't need season/round filters
+                # For circuits, we pass season to get season-specific circuits
+                if endpoint == "circuits":
+                    self.ingest_endpoint(
+                        endpoint,
+                        batch_id,
+                        season=season,
+                        force_refresh=force_refresh
+                    )
+                else:
+                    # seasons and status are truly static
+                    self.ingest_endpoint(
+                        endpoint,
+                        batch_id,
+                        force_refresh=force_refresh
+                    )
+            
+            # Phase 2: Season-level data
+            logger.info("\n--- Phase 2: Season-Level Data ---")
             for endpoint in ["constructors", "drivers", "races"]:
                 self.ingest_endpoint(
                     endpoint, 
@@ -396,8 +417,8 @@ class F1DataIngestor:
                     force_refresh=force_refresh
                 )
 
-            # Phase 2: Fetch race calendar
-            logger.info("\n--- Phase 2: Race Calendar ---")
+            # Phase 3: Fetch race calendar
+            logger.info("\n--- Phase 3: Race Calendar ---")
             schedule_url = f"{self.base_url}/{season}.json"
             schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
             races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
@@ -409,8 +430,8 @@ class F1DataIngestor:
                 logger.warning(f"⚠️  No races found for season {season}")
                 return self._generate_summary(start_time)
 
-            # Phase 3: Race-level data extraction
-            logger.info("\n--- Phase 3: Race-Level Data ---")
+            # Phase 4: Race-level data extraction
+            logger.info("\n--- Phase 4: Race-Level Data ---")
             for idx, race in enumerate(races_list, 1):
                 round_num = int(race["round"])
                 race_name = race.get("raceName", "Unknown")
