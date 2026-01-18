@@ -37,6 +37,7 @@ from ..config import (
     RETRY_MAX_ATTEMPTS,
     RETRY_MIN_WAIT,
     RETRY_MAX_WAIT,
+    MAX_CONCURRENT_WORKERS,
 )
 from f1_data.minio.object_store import F1ObjectStore
 
@@ -436,7 +437,7 @@ class F1DataIngestor:
         self._reset_stats()
         extraction_start = datetime.now()
         phase_timings = {}
-        MAX_WORKERS = 3 if concurrency_enabled else 1
+        MAX_WORKERS = MAX_CONCURRENT_WORKERS if concurrency_enabled else 1
 
         try:
             # ============================================================

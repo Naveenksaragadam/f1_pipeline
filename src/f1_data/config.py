@@ -63,6 +63,10 @@ RETRY_MAX_ATTEMPTS: int = int(os.getenv("RETRY_MAX_ATTEMPTS", "10"))
 RETRY_MIN_WAIT: int = int(os.getenv("RETRY_MIN_WAIT", "2"))
 RETRY_MAX_WAIT: int = int(os.getenv("RETRY_MAX_WAIT", "60"))
 
+# --- 2.1 CONCURRENCY CONFIGURATION ---
+# Guideline: Be polite to the API. Ergast/Jolpica has rate limits.
+MAX_CONCURRENT_WORKERS: int = int(os.getenv("MAX_CONCURRENT_WORKERS", "3"))
+
 # --- 3. OBJECT STORE CONFIGURATION (MinIO) ---
 # Docker internal endpoint vs external local endpoint
 MINIO_ENDPOINT: str = os.getenv(
