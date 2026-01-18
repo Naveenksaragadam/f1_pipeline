@@ -1,0 +1,2 @@
+docker-compose down
+docker-compose run --rm airflow-scheduler python /opt/airflow/src/test/backfill.py
