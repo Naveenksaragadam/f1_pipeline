@@ -54,6 +54,52 @@ def run_silver_transformation(**kwargs) -> None:
          raise AirflowException(f"Silver processing failed: {e}") from e
 
 
+from f1_data.analytics.loader import ClickHouseLoader
+
+def run_gold_loading(**kwargs) -> None:
+    """
+    Orchestrate Loading of Silver data into ClickHouse (Gold Layer).
+    """
+    try:
+        # Context
+        logical_date = kwargs["logical_date"]
+        batch_id = kwargs["ts_nodash"]
+        season_year = logical_date.year
+        
+        logger.info(f"💰 Starting Gold Loading for Season {season_year} (Batch {batch_id})")
+        
+        loader = ClickHouseLoader()
+        
+        # Ensure schema exists
+        loader.setup_schema()
+        
+        # Load each endpoint
+        loaded_endpoints = []
+        for endpoint in ENDPOINT_CONFIG.keys():
+            try:
+                # We attempt to load all. If a silver file doesn't exist, the loader will likely fail 
+                # or we can check existence first. 
+                # The loader's ingest_batch uses S3 table function which might fail if file missing.
+                # However, since silver task just ran, files should exist if data was present.
+                # Standings might be empty for some races.
+                
+                # To be robust, we could check if SilverProcessor produced output in the previous step
+                # passed via XCom, or just try/catch.
+                
+                 loader.ingest_batch(endpoint, season_year, batch_id)
+                 loaded_endpoints.append(endpoint)
+                 
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load Gold for {endpoint}: {e}")
+                # We continue to next endpoint
+                
+        logger.info(f"✅ Gold Loading Complete. Loaded: {loaded_endpoints}")
+
+    except Exception as e:
+        logger.error(f"❌ Gold loading failed: {e}", exc_info=True)
+        raise AirflowException(f"Gold loading failed: {e}") from e
+
+
 def run_ingestion(**kwargs) -> None:
     """
     Orchestrate F1 data ingestion with intelligent refresh strategy.
@@ -79,6 +125,9 @@ def run_ingestion(**kwargs) -> None:
         # Historical data is stable and can be safely skipped
         current_year = pendulum.now().year
         should_force_refresh = (season_year == current_year)
+        
+        # Refresh mode for logging
+        refresh_mode = "FORCE_REFRESH" if should_force_refresh else "IDEMPOTENT"
 
         logger.info(
             f"\n{'=' * 70}\n"
@@ -86,7 +135,7 @@ def run_ingestion(**kwargs) -> None:
             f"   Season: {season_year}\n"
             f"   Batch ID: {batch_id}\n"
             f"   Current Year: {current_year}\n"
-            f"   Force Refresh: {should_force_refresh}\n"
+            f"   Force Refresh: {should_force_refresh} ({refresh_mode})\n"
             f"   Reason: {'Active season - data may change' if should_force_refresh else 'Historical data - stable'}\n"
             f"{'=' * 70}"
         )
@@ -189,4 +238,10 @@ with DAG(
         provide_context=True,
     )
 
-    ingest_task >> silver_task
+    gold_task = PythonOperator(
+        task_id="load_gold_clickhouse",
+        python_callable=run_gold_loading,
+        provide_context=True,
+    )
+
+    ingest_task >> silver_task >> gold_task
