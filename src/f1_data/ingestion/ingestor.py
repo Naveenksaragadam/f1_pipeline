@@ -9,11 +9,13 @@ Key Improvements:
 - Eliminated duplicate race calendar fetching
 - Added sprint season filtering (2021+)
 - Enhanced performance tracking with phase timings
+- Support for concurrent pagination (max_workers)
 """
 import logging
 from requests import RequestException
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, Tuple, List
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -24,7 +26,7 @@ from tenacity import (
 
 # Internal Imports
 from .http_client import create_session
-from .config import (
+from ..config import (
     BASE_URL,
     DEFAULT_LIMIT,
     MINIO_BUCKET_BRONZE,
@@ -62,6 +64,7 @@ class F1DataIngestor:
     - Automatic pagination handling
     - Comprehensive error handling and retry logic
     - Detailed stats tracking with phase timings
+    - Concurrent pagination support
     """
 
     def __init__(
@@ -133,27 +136,6 @@ class F1DataIngestor:
     ) -> str:
         """
         Generate Hive-style partitioned path for Bronze layer.
-
-        Format:
-            bronze/ergast/endpoint={name}/
-            [season={YYYY}/]
-            [round={RR}/]
-            batch_id={timestamp}/
-            page_{NNN}.json
-
-        Args:
-            endpoint: API endpoint name
-            batch_id: Unique batch identifier
-            season: Optional season year
-            round_num: Optional round number (converted to int)
-            page: Page number for pagination
-            
-        Returns:
-            S3 object key path
-            
-        Example:
-            _generate_path("results", "20241216T120000", 2024, 5, 1)
-            -> "ergast/endpoint=results/season=2024/round=05/batch_id=20241216T120000/page_001.json"
         """
         path_parts = ["ergast", f"endpoint={endpoint}"]
 
@@ -178,15 +160,6 @@ class F1DataIngestor:
     ) -> Set[str]:
         """
         Batch fetch existing object keys for an endpoint to minimize S3 HEAD requests.
-        
-        Args:
-            endpoint: API endpoint name
-            batch_id: Unique batch identifier
-            season: Optional season filter
-            round_num: Optional round filter
-            
-        Returns:
-            Set of existing S3 object keys
         """
         # Build prefix for listing
         prefix_parts = ["ergast", f"endpoint={endpoint}"]
@@ -216,24 +189,27 @@ class F1DataIngestor:
     ) -> None:
         """
         Save data to MinIO with metadata envelope.
-
-        Args:
-            data: API response data
-            path: S3 object key
-            metadata: Ingestion metadata
-            
-        Raises:
-            Exception: On S3/MinIO storage failures
         """
         envelope = {
             "metadata": metadata,
             "data": data,
         }
 
+        # Extract S3 object metadata for tagging (enables querying without downloading)
+        s3_metadata = {
+            "batch_id": str(metadata["batch_id"]),
+            "endpoint": str(metadata["endpoint"]),
+            "ingestion_timestamp": str(metadata["ingestion_timestamp"]),
+            "season": str(metadata.get("season", "")),
+            "round": str(metadata.get("round", "")),
+            "page": str(metadata.get("page", "")),
+        }
+
         try:
-            self.store.put_object(path, envelope)
+            self.store.put_object(path, envelope, metadata=s3_metadata)
             self.stats["files_written"] += 1
-            logger.info(f"✅ Saved: {path}")
+            if self.stats["files_written"] % 10 == 0:
+                 logger.debug(f"Snapshot: {self.stats}")
         except Exception as e:
             self.stats["errors_encountered"] += 1
             logger.error(f"❌ Failed to save {path}: {e}")
@@ -248,30 +224,17 @@ class F1DataIngestor:
     ) -> Dict[str, Any]:
         """
         Fetch a single page from the API with automatic retries.
-        
-        Args:
-            url: API endpoint URL
-            limit: Page size limit
-            offset: Pagination offset
-            
-        Returns:
-            JSON response as dictionary
-            
-        Raises:
-            RequestException: On network/HTTP errors after retries
-            ValueError: On invalid JSON response
         """
         params = {"limit": limit, "offset": offset}
 
         try:
-            logger.debug(f"📡 GET {url} | limit={limit} offset={offset}")
+            # logger.debug(f"📡 GET {url} | limit={limit} offset={offset}")
             response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
             
             self.stats["api_calls_made"] += 1
             data = response.json()
             
-            logger.debug(f"✅ API call successful | Status: {response.status_code}")
             return data
 
         except RequestException as e:
@@ -284,6 +247,53 @@ class F1DataIngestor:
             self.stats["errors_encountered"] += 1
             raise
 
+    def _fetch_and_save_page(
+        self,
+        endpoint_name: str,
+        batch_id: str,
+        full_url: str,
+        season: Optional[int],
+        round_num: Optional[int],
+        page: int,
+        limit: int,
+        offset: int,
+        force_refresh: bool
+    ) -> Tuple[bool, int]:
+        """Fetch and save a single page (used for concurrent processing)."""
+        try:
+            s3_key = self._generate_path(
+                endpoint_name, batch_id, season, round_num, page
+            )
+
+            if not force_refresh and self.store.object_exists(s3_key):
+                self.stats["files_skipped"] += 1
+                return (True, 0)
+
+            response_data = self.fetch_page(full_url, limit, offset)
+            mr_data = response_data.get("MRData", {})
+            total_records = int(mr_data.get("total", 0))
+
+            metadata = {
+                "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
+                "batch_id": batch_id,
+                "endpoint": endpoint_name,
+                "season": season,
+                "round": round_num,
+                "page": page,
+                "source_url": f"{full_url}?limit={limit}&offset={offset}",
+                "api_response_total": total_records,
+                "file_version": "1.0",
+                "force_refresh": force_refresh,
+            }
+
+            self._save_to_minio(response_data, s3_key, metadata)
+            return (True, total_records)
+
+        except Exception as e:
+            logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
+            self.stats["errors_encountered"] += 1
+            return (False, 0)
+
     def ingest_endpoint(
         self,
         endpoint_name: str,
@@ -291,26 +301,10 @@ class F1DataIngestor:
         season: Optional[int] = None,
         round_num: Optional[int] = None,
         force_refresh: bool = False,
+        max_workers: int = 1,
     ) -> None:
         """
-        Ingest data from a specific API endpoint with pagination support.
-        
-        REFACTORED LOGIC:
-        1. Always fetch first page to determine total_records
-        2. Calculate total pages needed
-        3. Batch check existing files (one S3 LIST instead of N HEADs)
-        4. Process all pages with proper skip logic
-
-        Args:
-            endpoint_name: API endpoint identifier (must exist in ENDPOINT_CONFIG)
-            batch_id: Unique batch identifier for this ingestion run
-            season: Optional season filter (e.g., 2024)
-            round_num: Optional round filter (e.g., 5)
-            force_refresh: If True, re-fetch even if files exist
-            
-        Raises:
-            ValueError: If endpoint_name not found in config
-            Exception: On API or storage failures
+        Ingest data from a specific API endpoint with pagination support and optional concurrency.
         """
         # Validate endpoint config exists
         config = ENDPOINT_CONFIG.get(endpoint_name)
@@ -331,19 +325,22 @@ class F1DataIngestor:
         refresh_mode = "FORCE_REFRESH" if force_refresh else "IDEMPOTENT"
 
         logger.info(
-            f"🚀 Starting: {endpoint_name} | "
+            f"🚀 Starting: {endpoint_name:20s} | "
             f"Season: {season} | Round: {round_num} | "
-            f"Mode: {refresh_mode}"
+            f"Workers: {max_workers}"
         )
 
         # STEP 1: Always fetch first page to determine total records
         try:
-            first_page_data = self.fetch_page(full_url, limit, offset=0)
-            mr_data = first_page_data.get("MRData", {})
-            total_records = int(mr_data.get("total", 0))
+            first_page_success, total_records = self._fetch_and_save_page(
+                endpoint_name, batch_id, full_url, season, round_num,
+                page=1, limit=limit, offset=0, force_refresh=force_refresh
+            )
+            if not first_page_success:
+                raise Exception(f"Failed to fetch first page of {endpoint_name}")
         except Exception as e:
-            logger.error(f"❌ Failed to fetch first page for {endpoint_name}: {e}")
-            raise
+             logger.error(f"❌ Failed to init ingestion for {endpoint_name}: {e}")
+             raise
 
         # STEP 2: Calculate total pages
         if not is_paginated or total_records == 0:
@@ -355,95 +352,77 @@ class F1DataIngestor:
             f"📊 {endpoint_name}: {total_records} records across {total_pages} page(s)"
         )
 
-        # STEP 3: Batch check existing files (optimization)
-        existing_keys = set()
-        if not force_refresh:
-            existing_keys = self._get_existing_keys(
-                endpoint_name, batch_id, season, round_num
-            )
+        if total_pages <= 1:
+            return
 
-        # STEP 4: Process all pages
-        for page in range(1, total_pages + 1):
-            offset = (page - 1) * limit
-            s3_key = self._generate_path(
-                endpoint_name, batch_id, season, round_num, page
-            )
+        # STEP 3: Fetch remaining pages
+        remaining_pages = list(range(2, total_pages + 1))
+        
+        # Decide concurrency strategy
+        if max_workers > 1 and len(remaining_pages) >= 2:
+             logger.info(f"Fetching {len(remaining_pages)} pages concurrently (workers={max_workers})")
+             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for page in remaining_pages:
+                    offset = (page - 1) * limit
+                    future = executor.submit(
+                        self._fetch_and_save_page,
+                        endpoint_name, batch_id, full_url, season, round_num,
+                        page, limit, offset, force_refresh
+                    )
+                    futures.append((page, future))
+                
+                # Check results
+                for page, future in futures:
+                    try:
+                        success, _ = future.result()
+                        if not success:
+                            logger.warning(f"Page {page} failed")
+                    except Exception as e:
+                        logger.error(f"Page {page} exception: {e}")
+        else:
+            # Sequential fallback (optimized)
+            existing_keys = set()
+            if not force_refresh:
+                existing_keys = self._get_existing_keys(
+                    endpoint_name, batch_id, season, round_num
+                )
 
-            # Check if file exists (using batch-fetched set)
-            if not force_refresh and s3_key in existing_keys:
-                logger.debug(f"⏭️  Skipping {s3_key} (already exists)")
-                self.stats["files_skipped"] += 1
-                continue
+            for page in remaining_pages:
+                offset = (page - 1) * limit
+                s3_key = self._generate_path(
+                    endpoint_name, batch_id, season, round_num, page
+                )
 
-            # Fetch data (reuse first page data if page == 1)
-            if page == 1:
-                response_data = first_page_data
-            else:
-                try:
-                    response_data = self.fetch_page(full_url, limit, offset)
-                except Exception as e:
-                    logger.error(f"❌ Failed to fetch page {page}: {e}")
-                    self.stats["errors_encountered"] += 1
-                    continue  # Skip this page, continue with others
+                if not force_refresh and s3_key in existing_keys:
+                    self.stats["files_skipped"] += 1
+                    continue
+                
+                self._fetch_and_save_page(
+                    endpoint_name, batch_id, full_url, season, round_num,
+                    page, limit, offset, force_refresh
+                )
 
-            # Build metadata
-            metadata = {
-                "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
-                "batch_id": batch_id,
-                "endpoint": endpoint_name,
-                "season": season,
-                "round": round_num,
-                "page": page,
-                "total_pages": total_pages,
-                "source_url": f"{full_url}?limit={limit}&offset={offset}",
-                "api_response_total": total_records,
-                "file_version": "1.0",
-                "force_refresh": force_refresh,
-            }
-
-            # Save to MinIO
-            try:
-                self._save_to_minio(response_data, s3_key, metadata)
-            except Exception as e:
-                logger.error(f"❌ Failed to save page {page}: {e}")
-                continue  # Continue processing other pages
-
-        logger.info(
-            f"✅ Completed {endpoint_name} | "
-            f"Records: {total_records} | "
-            f"Pages: {total_pages}"
-        )
+        logger.info(f"✅ Completed {endpoint_name}")
 
     def run_full_extraction(
         self, 
         season: int, 
         batch_id: str, 
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        concurrency_enabled: bool = True
     ) -> Dict[str, Any]:
         """
         Orchestrate full season extraction following dependency graph.
-        
-        REFACTORED IMPROVEMENTS:
-        - Read race calendar from Bronze instead of re-fetching from API
-        - Added sprint season filtering (only for 2021+)
-        - Enhanced performance tracking with phase timings
-        
-        Extraction order:
-        1. Reference data (seasons, circuits, status)
-        2. Season-level data (constructors, drivers, races)
-        3. Race-level data (results, qualifying, laps, pitstops, sprint*)
-        4. Standings (driver, constructor)
         
         Args:
             season: F1 season year (e.g., 2024)
             batch_id: Unique batch identifier
             force_refresh: If True, re-fetch all data
+            concurrency_enabled: Enable threading for paginated endpoints
             
         Returns:
             Dictionary containing extraction statistics
-            
-        Raises:
-            Exception: On critical extraction failures
         """
         logger.info(
             f"\n{'=' * 70}\n"
@@ -457,6 +436,7 @@ class F1DataIngestor:
         self._reset_stats()
         extraction_start = datetime.now()
         phase_timings = {}
+        MAX_WORKERS = 3 if concurrency_enabled else 1
 
         try:
             # ============================================================
@@ -466,21 +446,13 @@ class F1DataIngestor:
             logger.info("\n--- Phase 1: Reference Data ---")
             
             for endpoint in ["seasons", "circuits", "status"]:
-                if endpoint == "circuits":
-                    # Circuits are fetched per season to capture season-specific tracks
-                    self.ingest_endpoint(
-                        endpoint,
-                        batch_id,
-                        season=season,
-                        force_refresh=force_refresh
-                    )
-                else:
-                    # Seasons and status are truly static
-                    self.ingest_endpoint(
-                        endpoint,
-                        batch_id,
-                        force_refresh=force_refresh
-                    )
+                self.ingest_endpoint(
+                    endpoint,
+                    batch_id,
+                    season=(season if endpoint == "circuits" else None),
+                    force_refresh=force_refresh,
+                    max_workers=1
+                )
             
             phase_timings['reference_data'] = (datetime.now() - phase_start).total_seconds()
             logger.info(f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n")
@@ -496,7 +468,8 @@ class F1DataIngestor:
                     endpoint, 
                     batch_id, 
                     season=season, 
-                    force_refresh=force_refresh
+                    force_refresh=force_refresh,
+                    max_workers=MAX_WORKERS
                 )
             
             phase_timings['season_data'] = (datetime.now() - phase_start).total_seconds()
@@ -508,7 +481,6 @@ class F1DataIngestor:
             phase_start = datetime.now()
             logger.info("--- Phase 3: Race Calendar Parsing ---")
             
-            # FIXED: Read race calendar from Bronze instead of re-fetching from API
             races_key = f"ergast/endpoint=races/season={season}/batch_id={batch_id}/page_001.json"
             
             try:
@@ -521,7 +493,6 @@ class F1DataIngestor:
                     f"⚠️  Failed to read race calendar from Bronze: {e}\n"
                     f"   Falling back to API fetch..."
                 )
-                # Fallback: Fetch from API if Bronze read fails
                 schedule_url = f"{self.base_url}/{season}.json"
                 schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
                 races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
@@ -557,14 +528,11 @@ class F1DataIngestor:
                     f"{'─' * 70}"
                 )
 
-                # FIXED: Dynamic endpoint list based on season (sprint only for 2021+)
                 race_endpoints = ["results", "qualifying", "laps", "pitstops"]
-                
                 if season >= 2021:
                     race_endpoints.append("sprint")
                     logger.debug("Sprint races enabled for season >= 2021")
 
-                # Extract race-level data
                 for endpoint in race_endpoints:
                     self.ingest_endpoint(
                         endpoint,
@@ -572,9 +540,9 @@ class F1DataIngestor:
                         season=season,
                         round_num=round_num,
                         force_refresh=force_refresh,
+                        max_workers=MAX_WORKERS 
                     )
-
-                # Extract standings (cumulative after each race)
+                
                 for endpoint in ["driverstandings", "constructorstandings"]:
                     self.ingest_endpoint(
                         endpoint,
@@ -582,6 +550,7 @@ class F1DataIngestor:
                         season=season,
                         round_num=round_num,
                         force_refresh=force_refresh,
+                        max_workers=1
                     )
                 
                 round_duration = (datetime.now() - round_start).total_seconds()
@@ -610,13 +579,6 @@ class F1DataIngestor:
     ) -> Dict[str, Any]:
         """
         Generate extraction summary with statistics.
-        
-        Args:
-            start_time: Extraction start timestamp
-            phase_timings: Optional phase timing data
-            
-        Returns:
-            Dictionary containing execution metrics
         """
         duration = (datetime.now() - start_time).total_seconds()
         
@@ -627,7 +589,6 @@ class F1DataIngestor:
             **self.stats
         }
         
-        # Add timing breakdowns if available
         if phase_timings:
             summary["phase_timings"] = {
                 k: round(v, 2) for k, v in phase_timings.items()
