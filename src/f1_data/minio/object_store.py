@@ -13,6 +13,7 @@ from botocore.client import Config
 from contextlib import contextmanager
 from typing import Any, Dict, List, Union, Optional, Tuple, IO
 from botocore.exceptions import ClientError, BotoCoreError
+from ..config import MINIO_REGION
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,10 @@ class F1ObjectStore:
                 endpoint_url=self.endpoint_url,
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
-                region_name="us-east-1", 
+                region_name=MINIO_REGION, 
                 config=config
             )
-            logger.debug(f"✅ S3 client created for endpoint: {self.endpoint_url}")
+            logger.info(f"✅ S3 client created (Region: {MINIO_REGION})")
             return client
         except Exception as e:
             logger.error(f"❌ Failed to create S3 client: {e}")
