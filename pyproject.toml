@@ -61,6 +61,8 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "boto3-stubs[s3]>=1.42.19",
+    "pytest>=9.0.2",
+    "pytest-mock>=3.15.1",
 ]
 
 [tool.hatch.build.targets.wheel]
