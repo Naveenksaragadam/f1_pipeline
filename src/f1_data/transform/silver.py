@@ -2,11 +2,12 @@
 import logging
 import io
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import polars as pl
 import pyarrow.parquet as pq
+from pydantic import TypeAdapter, ValidationError
 
 from ..minio.object_store import F1ObjectStore
 from ..config import (
@@ -17,29 +18,21 @@ from ..config import (
     MINIO_SECRET_KEY,
     SILVER_PARTITION_COLS
 )
-from .schemas2 import RootFileStructure
+from .schemas2 import (
+    DriverRaw, ConstructorRaw, SeasonRaw, CircuitRaw, StatusRaw,
+    RaceTable, StandingsTable, RootFileStructure
+)
 
 logger = logging.getLogger(__name__)
 
 class SilverProcessor:
     """
     Process Bronze JSON data into Silver Parquet tables using Polars.
+    Includes explicit Pydantic validation.
     """
     
     def __init__(self, store: Optional[F1ObjectStore] = None):
-        """
-        Initialize processor.
-        
-        Args:
-            store: Optional pre-configured F1ObjectStore. 
-                   If None, creates a new one pointing to Silver/Bronze.
-                   (Note: F1ObjectStore manages one bucket, so we might need two instances 
-                   or switch generic store to handle multiple buckets if logic allows.
-                   Current F1ObjectStore is bucket-specific in init.)
-        """
-        # We need access to BOTH Bronze (Read) and Silver (Write) buckets.
-        # Efficient way: Two store instances.
-        
+        """Initialize generic and silver stores."""
         self.bronze_store = F1ObjectStore(
             bucket_name=MINIO_BUCKET_BRONZE,
             endpoint_url=MINIO_ENDPOINT,
@@ -47,7 +40,6 @@ class SilverProcessor:
             secret_key=MINIO_SECRET_KEY
         )
         
-        # If store passed in, assume it's for Silver (or generic) but we strictly need Silver writer
         self.silver_store = store or F1ObjectStore(
             bucket_name=MINIO_BUCKET_SILVER,
             endpoint_url=MINIO_ENDPOINT,
@@ -59,14 +51,18 @@ class SilverProcessor:
         """
         Process a specific batch of data for an endpoint/season.
         
-        1. List all pages in Bronze for this batch.
-        2. Read and Parse JSON.
-        3. Flatten/Normalize using Polars.
-        4. Write to Silver Parquet partitioned by season.
+        Flow:
+        1. List Files (Bronze)
+        2. Read JSON
+        3. Pydantic Validation (Strict Schema Check)
+        4. Polars Transformation (Unnest & Deduplicate)
+        5. Write Parquet (Silver)
         """
         logger.info(f"🔨 Starting Silver processing: {endpoint} (Season {season}, Batch {batch_id})")
         
         # 1. List Files
+        # Note: 'reference' endpoints might store data under season=0 or different path if we didn't unify it.
+        # But ingestor uses consistent pathing: endpoint/season/batch.
         prefix = f"ergast/endpoint={endpoint}/season={season}/batch_id={batch_id}/"
         keys = self.bronze_store.list_objects(prefix=prefix)
         
@@ -74,10 +70,10 @@ class SilverProcessor:
             logger.warning(f"⚠️  No files found for {prefix}")
             return
 
-        logger.info(f"   Found {len(keys)} pages. Reading...")
+        logger.info(f"   Found {len(keys)} pages. Reading & Validating...")
 
         # 2. Read & Validate (Parallel)
-        raw_records = []
+        valid_records = []
         with ThreadPoolExecutor() as executor:
             future_to_key = {executor.submit(self.bronze_store.get_json, key): key for key in keys}
             
@@ -85,37 +81,35 @@ class SilverProcessor:
                 key = future_to_key[future]
                 try:
                     data = future.result()
-                    # Validate envelope structure
-                    # We utilize the generic RootFileStructure wrapper here if needed,
-                    # or just extracting the inner data directly if we trust Bronze.
-                    # For safety, let's extract the actual API data payload.
-                    
-                    # Envelope structure from ingestor: {"metadata": ..., "data": ...}
                     if "data" in data and "MRData" in data["data"]:
-                        # Extract the inner list based on endpoint
-                        inner_data = self._extract_inner_data(endpoint, data["data"]["MRData"])
-                        raw_records.extend(inner_data)
+                        # 3. Validation & Extraction
+                        mr_data = data["data"]["MRData"]
+                        extracted_and_validated = self._validate_and_extract(endpoint, mr_data)
+                        valid_records.extend(extracted_and_validated)
                     else:
                         logger.warning(f"Invalid envelope in {key}")
                         
+                except ValidationError as ve:
+                     logger.error(f"❌ Schema Validation Failed for {key}: {ve}")
+                     # In strict mode, we might want to halt. For now, log and skip.
                 except Exception as e:
                     logger.error(f"❌ Failed to process {key}: {e}")
         
-        if not raw_records:
+        if not valid_records:
             logger.warning("⚠️  No valid records extracted.")
             return
 
-        # 3. Transform with Polars
+        # 4. Transform with Polars
         try:
-            df = pl.from_dicts(raw_records, infer_schema_length=1000)
+            # Pydantic dump ensures we have clean python dicts with correct types (e.g. dates as objects)
+            # Polars handles date objects well.
+            df = pl.from_dicts(valid_records, infer_schema_length=1000)
             
             # Add partition columns if missing
             if "season" not in df.columns:
                 df = df.with_columns(pl.lit(season).alias("season").cast(pl.Int64))
             
             # Deduplicate
-            # Strategy: Deduplicate by natural keys (or all columns if no ID)
-            # Polars unique() is fast.
             initial_count = len(df)
             df = df.unique()
             final_count = len(df)
@@ -123,11 +117,7 @@ class SilverProcessor:
             if initial_count > final_count:
                 logger.info(f"   Removed {initial_count - final_count} duplicates.")
             
-            # 4. Write to Silver (Parquet)
-            # We write to a temp buffer then upload to MinIO
-            
-            # Define Silver Path: endpoint/season=XXXX/batch_id.parquet
-            # Using Hive partitioning style in object naming
+            # 5. Write to Silver (Parquet)
             silver_key = f"{endpoint}/season={season}/{batch_id}.parquet"
             
             buffer = io.BytesIO()
@@ -137,8 +127,8 @@ class SilverProcessor:
             self.silver_store.put_object(
                 key=silver_key,
                 body=buffer,
-                compress=False, # Parquet is already compressed (Snappy)
-                metadata={"rows": str(final_count), "source_batch": batch_id}
+                compress=False, 
+                metadata={"rows": str(final_count), "source_batch": batch_id, "validated": "true"}
             )
             
             logger.info(f"✅ Written to Silver: {silver_key} ({final_count} rows)")
@@ -147,106 +137,112 @@ class SilverProcessor:
             logger.error(f"❌ Transformation failed for {endpoint}: {e}", exc_info=True)
             raise
 
-    def _extract_inner_data(self, endpoint: str, mr_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _validate_and_extract(self, endpoint: str, mr_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Extract the relevant list of records from the MRData response based on endpoint.
-        Uses naming conventions from Ergast API.
+        Validates JSON using Pydantic TypeAdapter and extracts flattened dicts.
         """
-        # Helper to unwrap known structures
-        if endpoint == "drivers":
-            return mr_data.get("DriverTable", {}).get("Drivers", [])
+        # ====================
+        # Reference Data
+        # ====================
+        if endpoint == "seasons":
+            raw_list = mr_data.get("SeasonTable", {}).get("Seasons", [])
+            adapter = TypeAdapter(List[SeasonRaw])
+            models = adapter.validate_python(raw_list)
+            return [m.model_dump() for m in models] # SnakeCase
+
+        elif endpoint == "circuits":
+            raw_list = mr_data.get("CircuitTable", {}).get("Circuits", [])
+            adapter = TypeAdapter(List[CircuitRaw])
+            models = adapter.validate_python(raw_list)
+            return [m.model_dump() for m in models]
+            
+        elif endpoint == "status":
+            raw_list = mr_data.get("StatusTable", {}).get("Status", [])
+            adapter = TypeAdapter(List[StatusRaw])
+            models = adapter.validate_python(raw_list)
+            return [m.model_dump() for m in models]
+
+        # ====================
+        # Simple Lists
+        # ====================
+        elif endpoint == "drivers":
+            raw_list = mr_data.get("DriverTable", {}).get("Drivers", [])
+            adapter = TypeAdapter(List[DriverRaw])
+            models = adapter.validate_python(raw_list)
+            return [m.model_dump() for m in models]
+
         elif endpoint == "constructors":
-            return mr_data.get("ConstructorTable", {}).get("Constructors", [])
-        elif endpoint == "races":
-            return mr_data.get("RaceTable", {}).get("Races", [])
-        elif endpoint == "results":
-            # Results are nested inside Races. 
-            # Structure: RaceTable -> Races (List) -> each Race has "Results" (List)
-            # We want to flatten this: Each row = Result + Race Info
-            races = mr_data.get("RaceTable", {}).get("Races", [])
-            flattened_results = []
-            for race in races:
-                race_info = {k: v for k, v in race.items() if k != "Results"}
-                results = race.get("Results", [])
-                for result in results:
-                    # Combine Race Info + Result Info
-                    combined = {**race_info, **result}
-                    flattened_results.append(combined)
-            return flattened_results
+            raw_list = mr_data.get("ConstructorTable", {}).get("Constructors", [])
+            adapter = TypeAdapter(List[ConstructorRaw])
+            models = adapter.validate_python(raw_list)
+            return [m.model_dump() for m in models]
+
+        # ====================
+        # Nested Race Data
+        # ====================
+        # Strategy: Validate the RaceTable structure first, then flatten.
+        elif endpoint in ["races", "results", "qualifying", "sprint", "pitstops", "laps"]:
+            # Validate the whole RaceTable structure
+            # This ensures all nested fields (Results, Laps etc) match the schema.
+            rt = RaceTable(**mr_data.get("RaceTable", {}))
             
-        # Fallback for other endpoints (to be implemented)
-            return flattened_results
-            
-        elif endpoint == "qualifying":
-            # Structure: RaceTable -> Races -> QualifyingResults
-            races = mr_data.get("RaceTable", {}).get("Races", [])
             flattened = []
-            for race in races:
-                race_info = {k: v for k, v in race.items() if k != "QualifyingResults"}
-                results = race.get("QualifyingResults", [])
-                for result in results:
-                     flattened.append({**race_info, **result})
-            return flattened
+            for race in rt.races:
+                # Base race info
+                race_dict = race.model_dump(exclude={'results', 'qualifying', 'sprint', 'pitstops', 'laps'})
+                
+                # Depending on endpoint, we extract specific list
+                # Note: The RaceRaw model has Optional fields for these lists.
+                
+                if endpoint == "races":
+                     # Just the race info
+                     flattened.append(race_dict)
+                
+                elif endpoint == "results" and race.results:
+                    for item in race.results:
+                        flattened.append({**race_dict, **item.model_dump()})
+
+                elif endpoint == "qualifying" and race.qualifying:
+                    for item in race.qualifying:
+                        flattened.append({**race_dict, **item.model_dump()})
+
+                elif endpoint == "sprint" and race.sprint:
+                    for item in race.sprint:
+                        flattened.append({**race_dict, **item.model_dump()})
+                
+                elif endpoint == "pitstops" and race.pitstops:
+                    for item in race.pitstops:
+                        flattened.append({**race_dict, **item.model_dump()})
+
+                elif endpoint == "laps" and race.laps:
+                     # Laps are distinct because they have nested Timings
+                     # Race -> Lap -> Timing
+                    for lap in race.laps:
+                        lap_num = lap.number
+                        for timing in lap.timings:
+                            row = {**race_dict, "lap": lap_num, **timing.model_dump()}
+                            flattened.append(row)
             
-        elif endpoint == "sprint":
-             # Structure: RaceTable -> Races -> SprintResults
-            races = mr_data.get("RaceTable", {}).get("Races", [])
-            flattened = []
-            for race in races:
-                race_info = {k: v for k, v in race.items() if k != "SprintResults"}
-                results = race.get("SprintResults", [])
-                for result in results:
-                     flattened.append({**race_info, **result})
             return flattened
 
-        elif endpoint == "pitstops":
-             # Structure: RaceTable -> Races -> PitStops
-            races = mr_data.get("RaceTable", {}).get("Races", [])
+        # ====================
+        # Standings
+        # ====================
+        elif endpoint in ["driverstandings", "constructorstandings"]:
+            st = StandingsTable(**mr_data.get("StandingsTable", {}))
             flattened = []
-            for race in races:
-                race_info = {k: v for k, v in race.items() if k != "PitStops"}
-                stops = race.get("PitStops", [])
-                for stop in stops:
-                     flattened.append({**race_info, **stop})
+            
+            for lst in st.standings_lists:
+                list_info = lst.model_dump(exclude={'driver_standings', 'constructor_standings'})
+                
+                if endpoint == "driverstandings" and lst.driver_standings:
+                    for item in lst.driver_standings:
+                         flattened.append({**list_info, **item.model_dump()})
+                
+                elif endpoint == "constructorstandings" and lst.constructor_standings:
+                    for item in lst.constructor_standings:
+                         flattened.append({**list_info, **item.model_dump()})
+                         
             return flattened
 
-        elif endpoint == "laps":
-             # Structure: RaceTable -> Races -> Laps -> Timings
-             # This is VERY deep. Race -> Lap -> Timing (Driver)
-            races = mr_data.get("RaceTable", {}).get("Races", [])
-            flattened = []
-            for race in races:
-                race_base = {k: v for k, v in race.items() if k != "Laps"}
-                laps = race.get("Laps", [])
-                for lap in laps:
-                    lap_number = lap.get("number")
-                    timings = lap.get("Timings", [])
-                    for timing in timings:
-                        # Row = Race Info + Lap # + Timing Info
-                        row = {**race_base, "lap": lap_number, **timing}
-                        flattened.append(row)
-            return flattened
-
-        elif endpoint == "driverstandings":
-            # StandingsTable -> StandingsLists -> DriverStandings
-            lists = mr_data.get("StandingsTable", {}).get("StandingsLists", [])
-            flattened = []
-            for item in lists:
-                list_info = {k: v for k, v in item.items() if k != "DriverStandings"}
-                standings = item.get("DriverStandings", [])
-                for standing in standings:
-                     flattened.append({**list_info, **standing})
-            return flattened
-            
-        elif endpoint == "constructorstandings":
-            # StandingsTable -> StandingsLists -> ConstructorStandings
-            lists = mr_data.get("StandingsTable", {}).get("StandingsLists", [])
-            flattened = []
-            for item in lists:
-                list_info = {k: v for k, v in item.items() if k != "ConstructorStandings"}
-                standings = item.get("ConstructorStandings", [])
-                for standing in standings:
-                     flattened.append({**list_info, **standing})
-            return flattened
-            
         return []

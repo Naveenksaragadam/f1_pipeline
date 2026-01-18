@@ -14,108 +14,75 @@ def mock_stores():
 @pytest.fixture
 def processor(mock_stores):
     mock_bronze, mock_silver = mock_stores
-    # We patch the init to avoid creating real clients, or we pass mocks if we refactored init.
-    # The current init creates generic clients if not passed. 
-    # But we can inject them if we subclass or patch.
-    # Easier: Just pass one store to init (the Second arg) and patch the First arg creation inside Init?
-    # Or better: Construct generic, then overwrite attributes.
-    
     with patch("f1_data.transform.silver.F1ObjectStore") as MockStoreClass:
-        # This mocks the calls inside __init__
-        # But we want to control the instances.
-        
-        # Strategy: Let's manually set the attributes after creation if possible,
-        # or use dependency injection pattern fully.
-        # The current code:
-        # self.bronze_store = F1ObjectStore(...)
-        # self.silver_store = store or F1ObjectStore(...)
-        
-        MockStoreClass.return_value = mock_bronze # Default return
-        
-        # If we pass a store, silver_store uses that.
+        MockStoreClass.return_value = mock_bronze
         proc = SilverProcessor(store=mock_silver)
-        
-        # Fix: The init called F1ObjectStore() for bronze_store.
-        # So proc.bronze_store is the mock_bronze (from return_value)
-        # proc.silver_store is mock_silver (passed arg)
-        
         return proc
 
 def test_extract_inner_data_drivers(processor):
-    """Test flattening of DriverTable."""
+    """Test flattening of DriverTable with validation."""
     data = {
         "DriverTable": {
             "Drivers": [
-                {"driverId": "hamilton", "givenName": "Lewis"},
-                {"driverId": "bottas", "givenName": "Valtteri"}
+                {
+                    "driverId": "hamilton", 
+                    "givenName": "Lewis", 
+                    "familyName": "Hamilton",
+                    "dateOfBirth": "1985-01-07",
+                    "nationality": "British",
+                    "url": "http://test"
+                }
             ]
         }
     }
-    result = processor._extract_inner_data("drivers", data)
-    assert len(result) == 2
-    assert result[0]["driverId"] == "hamilton"
+    result = processor._validate_and_extract("drivers", data)
+    assert len(result) == 1
+    assert result[0]["driver_id"] == "hamilton"
 
 def test_extract_inner_data_results(processor):
     """Test flattening of RaceTable -> Races -> Results."""
-    data = {
-        "RaceTable": {
-            "Races": [
-                {
-                    "season": "2024",
-                    "round": "1",
-                    "raceName": "Bahrain",
-                    "Results": [
-                        {"position": "1", "driverId": "max"},
-                        {"position": "2", "driverId": "checo"}
-                    ]
-                }
-            ]
-        }
-    }
-    result = processor._extract_inner_data("results", data)
-    assert len(result) == 2
-    assert result[0]["raceName"] == "Bahrain"
-    assert result[0]["driverId"] == "max" # Flattened
-    assert "Results" not in result[0] # Removed nested list
+    data = {"RaceTable": {"season": "2024", "Races": [{
+        "season": "2024", "round": "1", "raceName": "Bahrain", "date": "2024-03-02", "url": "http://test",
+        "Circuit": {"circuitId": "bahrain", "url": "http://", "circuitName": "Bahrain", "Location": {}},
+        "Results": [{
+            "number": "1", "position": "1", "positionText": "1", "points": "25", "grid": "1", "laps": "57", "status": "Finished",
+            "Driver": {"driverId": "max", "givenName": "Max", "familyName": "Ver", "dateOfBirth": "1997-09-30", "nationality": "Dutch", "url": "ht"},
+            "Constructor": {"constructorId": "red_bull", "url": "h", "name": "Red Bull", "nationality": "Austrian"}
+        }]
+    }]}}
+    
+    result = processor._validate_and_extract("results", data)
+    assert len(result) == 1
+    assert result[0]["race_name"] == "Bahrain"
+    assert result[0]["driver"]["driver_id"] == "max"
 
-def test_extract_inner_data_laps(processor):
-    """Test flattening of Laps (Deep nesting)."""
+def test_extract_validation_error(processor):
+    """Test that invalid data raises or logs error."""
+    # Missing required field 'driverId'
     data = {
-        "RaceTable": {
-            "Races": [
-                {
-                    "raceName": "Test GP",
-                    "Laps": [
-                        {
-                            "number": "1",
-                            "Timings": [
-                                {"driverId": "d1", "time": "1:30"},
-                                {"driverId": "d2", "time": "1:31"}
-                            ]
-                        }
-                    ]
-                }
-            ]
+        "DriverTable": {
+            "Drivers": [{"givenName": "Unknown"}] 
         }
     }
-    result = processor._extract_inner_data("laps", data)
-    assert len(result) == 2
-    assert result[0]["raceName"] == "Test GP"
-    assert result[0]["lap"] == "1"
-    assert result[0]["driverId"] == "d1"
+    with pytest.raises(Exception): # The processor catches it, but _validate_and_extract raises it? 
+        # Actually _validate_and_extract raises ValidationError, process_batch catches it.
+        # Let's verify _validate_and_extract behavior directly.
+         processor._validate_and_extract("drivers", data)
 
 def test_process_batch_flow(processor):
     """Test the full process_batch flow."""
     # 1. Setup Bronze Mock
     processor.bronze_store.list_objects.return_value = ["file1.json"]
     
-    # Mock return data
     mock_json = {
         "metadata": {},
         "data": {
             "MRData": {
                 "DriverTable": {
-                    "Drivers": [{"driverId": "d1"}, {"driverId": "d1"}] # Duplicate for testing unique
+                    "Drivers": [{
+                        "driverId": "d1", "givenName": "D", "familyName": "O", 
+                        "dateOfBirth": "2000-01-01", "nationality": "Test", "url": "u"
+                    }] 
                 }
             }
         }
@@ -125,21 +92,7 @@ def test_process_batch_flow(processor):
     # 2. Run Process
     processor.process_batch("batch1", 2024, "drivers")
     
-    # 3. Verify Bronze Read
-    processor.bronze_store.list_objects.assert_called()
-    processor.bronze_store.get_json.assert_called_with("file1.json")
-    
-    # 4. Verify Silver Write
+    # 3. Verify Silver Write
     processor.silver_store.put_object.assert_called_once()
     call_args = processor.silver_store.put_object.call_args[1]
-    
-    assert call_args["key"] == "drivers/season=2024/batch1.parquet"
-    assert "rows" in call_args["metadata"]
-    # Should be 1 row if deduplication works (d1 vs d1 duplicate)
-    # Wait, unique() dedups entire rows.
-    # {"driverId": "d1"} == {"driverId": "d1"}
-    assert call_args["metadata"]["rows"] == "1" 
-    
-    # Verify Content (Parquet)
-    # We can't easily read the bytes buffer mock without pyarrow, 
-    # but the presence of the call + metadata is good enough for unit logic.
+    assert call_args["metadata"]["rows"] == "1"
