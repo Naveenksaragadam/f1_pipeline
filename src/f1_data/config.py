@@ -82,6 +82,7 @@ MINIO_BUCKET_BRONZE: str = os.getenv("BUCKET_BRONZE", "bronze")
 MINIO_BUCKET_SILVER: str = os.getenv("BUCKET_SILVER", "silver")
 MINIO_BUCKET_GOLD: str = os.getenv("BUCKET_GOLD", "gold")
 MINIO_REGION: str = os.getenv("MINIO_REGION", "us-east-1")
+SILVER_PARTITION_COLS: list[str] = ["season", "round"]
 
 # --- 4. DATA WAREHOUSE CONFIGURATION (ClickHouse) ---
 CLICKHOUSE_HOST: str = os.getenv(
