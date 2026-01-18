@@ -10,8 +10,48 @@ from airflow.operators.python import PythonOperator # type: ignore
 from airflow.exceptions import AirflowException # type: ignore
 
 from f1_data.ingestion.ingestor import F1DataIngestor
+from f1_data.transform.silver import SilverProcessor
+from f1_data.config import ENDPOINT_CONFIG
 
 logger = logging.getLogger(__name__)
+
+
+def run_silver_transformation(**kwargs) -> None:
+    """
+    Orchestrate Silver layer transformation using Polars.
+    """
+    try:
+        # Context
+        logical_date = kwargs["logical_date"]
+        batch_id = kwargs["ts_nodash"]
+        season_year = logical_date.year
+        
+        logger.info(f"🔨 Starting Silver Transformation for Season {season_year} (Batch {batch_id})")
+        
+        processor = SilverProcessor()
+        
+        # Iterate over all configured endpoints
+        # We only process endpoints that have pagination/data files. 
+        # config.py ENDPOINT_CONFIG keys are the endpoints.
+        
+        processed_endpoints = []
+        for endpoint, config in ENDPOINT_CONFIG.items():
+            # Skip if needed? No, we try to process all.
+            # If no files exist (e.g. skipped by ingestor), processor handles it gracefully.
+            try:
+                processor.process_batch(batch_id, season_year, endpoint)
+                processed_endpoints.append(endpoint)
+            except Exception as e:
+                logger.error(f"❌ Failed to process endpoint {endpoint}: {e}")
+                # We might want to continue processing others even if one fails
+                # But typically we want to fail the task if data is incomplete.
+                raise e 
+        
+        logger.info(f"✅ Silver Transformation Complete. Processed: {processed_endpoints}")
+        
+    except Exception as e:
+         logger.error(f"❌ Silver processing failed: {e}", exc_info=True)
+         raise AirflowException(f"Silver processing failed: {e}") from e
 
 
 def run_ingestion(**kwargs) -> None:
@@ -142,3 +182,11 @@ with DAG(
         python_callable=run_ingestion,
         provide_context=True,
     )
+
+    silver_task = PythonOperator(
+        task_id="transform_silver",
+        python_callable=run_silver_transformation,
+        provide_context=True,
+    )
+
+    ingest_task >> silver_task
