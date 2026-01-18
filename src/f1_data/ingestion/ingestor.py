@@ -366,8 +366,13 @@ class F1DataIngestor:
         # STEP 3: Fetch remaining pages
         remaining_pages = list(range(2, total_pages + 1))
         
-        # Decide concurrency strategy
         if max_workers > 1 and len(remaining_pages) >= 2:
+             existing_keys = set()
+             if not force_refresh:
+                existing_keys = self._get_existing_keys(
+                    endpoint_name, batch_id, season, round_num
+                )
+             
              logger.info(f"Fetching {len(remaining_pages)} pages concurrently (workers={max_workers})")
              with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
