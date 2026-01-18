@@ -258,7 +258,8 @@ class F1DataIngestor:
         page: int,
         limit: int,
         offset: int,
-        force_refresh: bool
+        force_refresh: bool,
+        existing_keys: Optional[Set[str]] = None
     ) -> Tuple[bool, int]:
         """Fetch and save a single page (used for concurrent processing)."""
         try:
@@ -266,9 +267,15 @@ class F1DataIngestor:
                 endpoint_name, batch_id, season, round_num, page
             )
 
-            if not force_refresh and self.store.object_exists(s3_key):
-                self.stats["files_skipped"] += 1
-                return (True, 0)
+            if not force_refresh:
+                # Check provided batch set or fallback to individual check
+                if existing_keys is not None:
+                     if s3_key in existing_keys:
+                        self.stats["files_skipped"] += 1
+                        return (True, 0)
+                elif self.store.object_exists(s3_key):
+                    self.stats["files_skipped"] += 1
+                    return (True, 0)
 
             response_data = self.fetch_page(full_url, limit, offset)
             mr_data = response_data.get("MRData", {})
@@ -369,7 +376,7 @@ class F1DataIngestor:
                     future = executor.submit(
                         self._fetch_and_save_page,
                         endpoint_name, batch_id, full_url, season, round_num,
-                        page, limit, offset, force_refresh
+                        page, limit, offset, force_refresh, existing_keys
                     )
                     futures.append((page, future))
                 
