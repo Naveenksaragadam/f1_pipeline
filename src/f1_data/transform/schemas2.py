@@ -147,7 +147,7 @@ class RaceRaw(BaseModel):
     round: str
     url: str
     race_name: str = Field(alias="raceName")
-    circuit: dict = Field(alias="Circuit")
+    circuit: CircuitRaw = Field(alias="Circuit")
     date: date
     time: Optional[str] = None
     

@@ -46,6 +46,8 @@ class SilverProcessor:
             access_key=MINIO_ACCESS_KEY,
             secret_key=MINIO_SECRET_KEY
         )
+        # Ensure Silver bucket exists
+        self.silver_store.create_bucket_if_not_exists()
 
     def process_batch(self, batch_id: str, season: int, endpoint: str) -> None:
         """
@@ -117,6 +119,9 @@ class SilverProcessor:
             if initial_count > final_count:
                 logger.info(f"   Removed {initial_count - final_count} duplicates.")
             
+            # Flatten Structs (Recursive for nested objects like FastestLap.Time)
+            df = self._flatten_structs(df)
+
             # 5. Write to Silver (Parquet)
             silver_key = f"{endpoint}/season={season}/{batch_id}.parquet"
             
@@ -136,6 +141,38 @@ class SilverProcessor:
         except Exception as e:
             logger.error(f"❌ Transformation failed for {endpoint}: {e}", exc_info=True)
             raise
+
+    def _flatten_structs(self, df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Recursively unnest Struct columns with prefix to match ClickHouse flat DDL.
+        e.g. circuit: {circuit_id: "x"} -> circuit_circuit_id: "x"
+        """
+        while True:
+            struct_cols = [name for name, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
+            if not struct_cols:
+                break
+            
+            for col in struct_cols:
+                # Rename nested fields to include parent prefix
+                # We need the field names.
+                # dtype is pl.Struct, containing fields
+                dtype = df.schema[col]
+                field_names = [f.name for f in dtype.fields]
+                
+                # Create renaming map
+                # Rename 'circuitId' to 'circuit_id' first? No, schemas are already snake_case mostly.
+                # schemas2.py defines aliases (camelCase in JSON) but model_dump() output depends on config.
+                # We used model_dump() (default) without by_alias.
+                # So fields are snake_case from python model attribute names (e.g. circuit_id).
+                # Resulting col: circuit_circuit_id.
+                
+                new_names = [f"{col}_{name}" for name in field_names]
+                
+                df = df.with_columns(
+                    pl.col(col).struct.rename_fields(new_names)
+                ).unnest(col)
+                
+        return df
 
     def _validate_and_extract(self, endpoint: str, mr_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """

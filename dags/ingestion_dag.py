@@ -192,9 +192,10 @@ with DAG(
     dag_id="f1_pipeline",
     description="Extract F1 data from Jolpica API to Bronze layer (MinIO)",
     default_args=default_args,
-    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"), 
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
+    end_date=pendulum.datetime(2024, 1, 1, tz="UTC"), # Limit to 2023 season only
     schedule_interval="@yearly",
-    catchup=True,
+    catchup=False,
     max_active_runs=1,  # Sequential execution prevents API rate limits
     tags=["f1", "bronze", "ingestion", "jolpica"],
     doc_md="""

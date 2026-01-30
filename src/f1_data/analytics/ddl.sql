@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     code Nullable(String),
     batch_id String,
     ingestion_timestamp DateTime DEFAULT now()
-) ENGINE = ReplacingMergeTree(batch_id)
+) ENGINE = ReplacingMergeTree(ingestion_timestamp)
 ORDER BY driver_id;
 
 -- =========================================================================
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS constructors (
     nationality String,
     batch_id String,
     ingestion_timestamp DateTime DEFAULT now()
-) ENGINE = ReplacingMergeTree(batch_id)
+) ENGINE = ReplacingMergeTree(ingestion_timestamp)
 ORDER BY constructor_id;
 
 -- =========================================================================
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS races (
     circuit_circuit_name String,
     batch_id String,
     ingestion_timestamp DateTime DEFAULT now()
-) ENGINE = ReplacingMergeTree(batch_id)
+) ENGINE = ReplacingMergeTree(ingestion_timestamp)
 ORDER BY (season, round);
 
 -- =========================================================================
