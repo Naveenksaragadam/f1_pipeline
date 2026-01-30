@@ -242,8 +242,7 @@ class F1ObjectStore:
             content_encoding = 'gzip'
 
         # Calculate MD5 Checksum (Data Integrity)
-        # nosec: B303 - MD5 is required by S3 for Content-MD5 integrity checks, not for security.
-        md5_hash = hashlib.md5(data).digest()
+        md5_hash = hashlib.md5(data).digest()  # nosec: B303
         md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
 
         try:
