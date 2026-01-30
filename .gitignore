@@ -23,9 +23,16 @@ logs/
 
 # Python environment
 .venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # test python file
 src/test
@@ -39,5 +46,12 @@ docs/dev_docs/
 *.sublime-workspace
 *.sublime-project
 
-# DS_Store
-*.DS_Store
+# dbt
+dbt_modules/
+dbt_packages/
+target/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
