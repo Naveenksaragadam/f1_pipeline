@@ -1,4 +1,4 @@
-
+import os
 import io
 import json
 import gzip
@@ -16,8 +16,8 @@ def store(mock_s3_client):
     return F1ObjectStore(
         bucket_name="test-bucket",
         endpoint_url="http://mock-minio:9000",
-        access_key="dummy_key",
-        secret_key="dummy_secret",
+        access_key=os.getenv("MINIO_ACCESS_KEY", "dummy"),
+        secret_key=os.getenv("MINIO_SECRET_KEY", "dummy"),
         client=mock_s3_client
     )
 
@@ -27,8 +27,8 @@ def test_init_creates_client_with_region(mock_env):
         _ = F1ObjectStore(
             bucket_name="test",
             endpoint_url="http://url",
-            access_key="dummy_key",
-            secret_key="dummy_secret"
+            access_key=os.getenv("TEST_KEY", "dummy"),
+            secret_key=os.getenv("TEST_SECRET", "dummy")
         )
         # Check if region_name was passed
         _, kwargs = mock_boto.call_args
