@@ -68,4 +68,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/f1_data"]
+packages = ["src/f1_pipeline"]

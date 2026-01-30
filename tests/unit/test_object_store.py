@@ -4,7 +4,7 @@ import json
 import gzip
 import pytest
 from unittest.mock import MagicMock, patch, call
-from f1_data.minio.object_store import F1ObjectStore
+from f1_pipeline.minio.object_store import F1ObjectStore
 from botocore.exceptions import ClientError
 
 @pytest.fixture

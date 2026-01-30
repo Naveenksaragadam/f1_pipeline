@@ -1,4 +1,4 @@
-# src/f1_data/ingestion/backfill.py
+# src/f1_pipeline/ingestion/backfill.py
 """
 Manual backfill script for historical F1 data ingestion.
 
@@ -9,7 +9,7 @@ import logging
 import sys
 from datetime import datetime
 from typing import List, Dict, Any
-from f1_data.ingestion.ingestor import F1DataIngestor
+from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -142,7 +142,7 @@ def run_manual_backfill(
         logger.warning(f"   Failed Seasons: {failed_seasons}\n")
         logger.warning(
             f"   To retry failed seasons, run:\n"
-            f"   python -m f1_data.ingestion.backfill --years {','.join(map(str, failed_seasons))}"
+            f"   python -m f1_pipeline.ingestion.backfill --years {','.join(map(str, failed_seasons))}"
         )
     
     logger.info(f"{'=' * 70}\n")

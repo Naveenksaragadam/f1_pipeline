@@ -1,7 +1,7 @@
-# src/f1_data/scripts/init_storage.py
+# src/f1_pipeline/scripts/init_storage.py
 import logging
-from f1_data.minio.object_store import F1ObjectStore
-from f1_data.ingestion.config import (
+from f1_pipeline.minio.object_store import F1ObjectStore
+from f1_pipeline.config import (
     MINIO_BUCKET_BRONZE, 
     MINIO_BUCKET_SILVER, 
     MINIO_BUCKET_GOLD,

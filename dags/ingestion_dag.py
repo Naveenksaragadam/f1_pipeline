@@ -9,8 +9,8 @@ from airflow import DAG # type: ignore
 from airflow.operators.python import PythonOperator # type: ignore
 from airflow.exceptions import AirflowException # type: ignore
 
-from f1_data.ingestion.ingestor import F1DataIngestor
-from f1_data.config import ENDPOINT_CONFIG
+from f1_pipeline.ingestion.ingestor import F1DataIngestor
+from f1_pipeline.config import ENDPOINT_CONFIG
 
 logger = logging.getLogger(__name__)
 

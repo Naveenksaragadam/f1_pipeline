@@ -1,6 +1,6 @@
 
 import pytest
-from f1_data.ingestion.http_client import create_session
+from f1_pipeline.ingestion.http_client import create_session
 from requests_ratelimiter import LimiterSession
 
 def test_create_session_returns_limiter_session(mock_env):
@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 def test_session_retries(mock_env):
     """Test that retry adapter is mounted."""
-    with patch("f1_data.ingestion.http_client.RETRY_MAX_ATTEMPTS", 1):
+    with patch("f1_pipeline.ingestion.http_client.RETRY_MAX_ATTEMPTS", 1):
         session = create_session()
         adapter = session.get_adapter("https://api.test.com")
         

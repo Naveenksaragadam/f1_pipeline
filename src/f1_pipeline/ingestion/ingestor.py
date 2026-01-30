@@ -1,4 +1,4 @@
-# src/f1_data/ingestion/ingestor.py
+# src/f1_pipeline/ingestion/ingestor.py
 """
 F1 Data Ingestor - Production-Grade Implementation
 Handles API extraction with retry logic, rate limiting, and idempotent writes.
@@ -39,7 +39,7 @@ from ..config import (
     RETRY_MAX_WAIT,
     MAX_CONCURRENT_WORKERS,
 )
-from f1_data.minio.object_store import F1ObjectStore
+from f1_pipeline.minio.object_store import F1ObjectStore
 
 
 logger = logging.getLogger(__name__)
