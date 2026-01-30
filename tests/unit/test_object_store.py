@@ -16,8 +16,8 @@ def store(mock_s3_client):
     return F1ObjectStore(
         bucket_name="test-bucket",
         endpoint_url="http://mock-minio:9000",
-        access_key="test-key",
-        secret_key="test-secret",
+        access_key="FAKE_ACCESS_KEY",
+        secret_key="FAKE_SECRET_KEY",
         client=mock_s3_client
     )
 
@@ -27,8 +27,8 @@ def test_init_creates_client_with_region(mock_env):
         _ = F1ObjectStore(
             bucket_name="test",
             endpoint_url="http://url",
-            access_key="key",
-            secret_key="secret"
+            access_key="FAKE_KEY",
+            secret_key="FAKE_SECRET"
         )
         # Check if region_name was passed
         _, kwargs = mock_boto.call_args
