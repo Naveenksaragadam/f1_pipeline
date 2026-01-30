@@ -242,7 +242,7 @@ class F1ObjectStore:
             content_encoding = 'gzip'
 
         # Calculate MD5 Checksum (Data Integrity)
-        md5_hash = hashlib.md5(data).digest()  # nosec: B303
+        md5_hash = hashlib.md5(data).digest()  # nosec
         md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
 
         try:
