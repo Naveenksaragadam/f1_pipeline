@@ -10,94 +10,9 @@ from airflow.operators.python import PythonOperator # type: ignore
 from airflow.exceptions import AirflowException # type: ignore
 
 from f1_data.ingestion.ingestor import F1DataIngestor
-from f1_data.transform.silver import SilverProcessor
 from f1_data.config import ENDPOINT_CONFIG
 
 logger = logging.getLogger(__name__)
-
-
-def run_silver_transformation(**kwargs) -> None:
-    """
-    Orchestrate Silver layer transformation using Polars.
-    """
-    try:
-        # Context
-        logical_date = kwargs["logical_date"]
-        batch_id = kwargs["ts_nodash"]
-        season_year = logical_date.year
-        
-        logger.info(f"🔨 Starting Silver Transformation for Season {season_year} (Batch {batch_id})")
-        
-        processor = SilverProcessor()
-        
-        # Iterate over all configured endpoints
-        # We only process endpoints that have pagination/data files. 
-        # config.py ENDPOINT_CONFIG keys are the endpoints.
-        
-        processed_endpoints = []
-        for endpoint, config in ENDPOINT_CONFIG.items():
-            # Skip if needed? No, we try to process all.
-            # If no files exist (e.g. skipped by ingestor), processor handles it gracefully.
-            try:
-                processor.process_batch(batch_id, season_year, endpoint)
-                processed_endpoints.append(endpoint)
-            except Exception as e:
-                logger.error(f"❌ Failed to process endpoint {endpoint}: {e}")
-                # We might want to continue processing others even if one fails
-                # But typically we want to fail the task if data is incomplete.
-                raise e 
-        
-        logger.info(f"✅ Silver Transformation Complete. Processed: {processed_endpoints}")
-        
-    except Exception as e:
-         logger.error(f"❌ Silver processing failed: {e}", exc_info=True)
-         raise AirflowException(f"Silver processing failed: {e}") from e
-
-
-from f1_data.analytics.loader import ClickHouseLoader
-
-def run_gold_loading(**kwargs) -> None:
-    """
-    Orchestrate Loading of Silver data into ClickHouse (Gold Layer).
-    """
-    try:
-        # Context
-        logical_date = kwargs["logical_date"]
-        batch_id = kwargs["ts_nodash"]
-        season_year = logical_date.year
-        
-        logger.info(f"💰 Starting Gold Loading for Season {season_year} (Batch {batch_id})")
-        
-        loader = ClickHouseLoader()
-        
-        # Ensure schema exists
-        loader.setup_schema()
-        
-        # Load each endpoint
-        loaded_endpoints = []
-        for endpoint in ENDPOINT_CONFIG.keys():
-            try:
-                # We attempt to load all. If a silver file doesn't exist, the loader will likely fail 
-                # or we can check existence first. 
-                # The loader's ingest_batch uses S3 table function which might fail if file missing.
-                # However, since silver task just ran, files should exist if data was present.
-                # Standings might be empty for some races.
-                
-                # To be robust, we could check if SilverProcessor produced output in the previous step
-                # passed via XCom, or just try/catch.
-                
-                 loader.ingest_batch(endpoint, season_year, batch_id)
-                 loaded_endpoints.append(endpoint)
-                 
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to load Gold for {endpoint}: {e}")
-                # We continue to next endpoint
-                
-        logger.info(f"✅ Gold Loading Complete. Loaded: {loaded_endpoints}")
-
-    except Exception as e:
-        logger.error(f"❌ Gold loading failed: {e}", exc_info=True)
-        raise AirflowException(f"Gold loading failed: {e}") from e
 
 
 def run_ingestion(**kwargs) -> None:
@@ -232,16 +147,4 @@ with DAG(
         provide_context=True,
     )
 
-    silver_task = PythonOperator(
-        task_id="transform_silver",
-        python_callable=run_silver_transformation,
-        provide_context=True,
-    )
-
-    gold_task = PythonOperator(
-        task_id="load_gold_clickhouse",
-        python_callable=run_gold_loading,
-        provide_context=True,
-    )
-
-    ingest_task >> silver_task >> gold_task
+    ingest_task
