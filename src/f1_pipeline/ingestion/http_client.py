@@ -1,4 +1,4 @@
-# src/f1_data/ingestion/http_client.py
+# src/f1_pipeline/ingestion/http_client.py
 
 import requests
 from requests.adapters import HTTPAdapter

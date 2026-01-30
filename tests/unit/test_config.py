@@ -1,7 +1,7 @@
 
 import os
 import pytest
-from f1_data import config
+from f1_pipeline import config
 
 def test_config_validation(mock_env):
     """Test that valid configuration passes validation."""

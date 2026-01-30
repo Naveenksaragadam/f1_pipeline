@@ -1,4 +1,4 @@
-#src/f1_data/ingestion/__init__.py
+#src/f1_pipeline/ingestion/__init__.py
 """
 F1 Data Ingestion Module
 

@@ -1,7 +1,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch, call, ANY
-from f1_data.ingestion.ingestor import F1DataIngestor
+from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
 @pytest.fixture
 def mock_session():
@@ -17,7 +17,7 @@ def mock_session():
 
 @pytest.fixture
 def ingestor(mock_env, mock_s3_client, mock_session):
-    with patch("f1_data.ingestion.ingestor.F1ObjectStore") as MockStore:
+    with patch("f1_pipeline.ingestion.ingestor.F1ObjectStore") as MockStore:
         MockStore.return_value.client = mock_s3_client
         # Mock existence check to return False by default (so we act as new)
         MockStore.return_value.list_objects.return_value = []
@@ -38,7 +38,7 @@ def test_ingest_pagination_sequential(ingestor, mock_session):
     ]
     
     # Patch DEFAULT_LIMIT to 10 so 25 records = 3 pages
-    with patch("f1_data.ingestion.ingestor.DEFAULT_LIMIT", 10):
+    with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
         ingestor.ingest_endpoint("drivers", batch_id="b1", season=2024, max_workers=1)
     
     # Verify calls
@@ -53,7 +53,7 @@ def test_ingest_concurrent_workers(ingestor, mock_session):
     # Page 1 handled sequentially. Pages 2-5 handled concurrently.
     mock_session.get.return_value.json.return_value = {"MRData": {"total": "50"}}
     
-    with patch("f1_data.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
+    with patch("f1_pipeline.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
         # We need the context manager to yield the executor mock
         mock_executor_instance = MockExecutor.return_value.__enter__.return_value
         
@@ -62,7 +62,7 @@ def test_ingest_concurrent_workers(ingestor, mock_session):
         mock_executor_instance.submit.return_value = mock_future
         
         # Patch limit to force pagination
-        with patch("f1_data.ingestion.ingestor.DEFAULT_LIMIT", 10):
+        with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
             ingestor.ingest_endpoint("drivers", batch_id="b1", season=2024, max_workers=3)
         
         # Verify Executor was initialized with max_workers=3

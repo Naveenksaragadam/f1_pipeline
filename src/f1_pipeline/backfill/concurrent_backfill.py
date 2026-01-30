@@ -6,9 +6,9 @@ from typing import List
 
 # INTERNAL IMPORT
 try:
-    from src.f1_data.ingestion.concurrent_ingestor import F1DataIngestor
+    from src.f1_pipeline.ingestion.ingestor import F1DataIngestor
 except ImportError:
-    from f1_data.ingestion.concurrent_ingestor import F1DataIngestor
+    from f1_pipeline.ingestion.ingestor import F1DataIngestor
     
 # Configure Logging for the Backfill Script
 logging.basicConfig(

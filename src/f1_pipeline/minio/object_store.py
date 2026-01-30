@@ -1,4 +1,4 @@
-# src/f1_data/minio/object_store.py
+# src/f1_pipeline/minio/object_store.py
 """
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """

@@ -219,15 +219,15 @@ f1_postgres         running            5432/tcp
 docker-compose exec airflow-scheduler airflow dags trigger f1_pipeline
 
 # Or run backfill for historical seasons
-docker-compose exec airflow-scheduler python -m f1_data.ingestion.backfill --start 2020 --end 2023
+docker-compose exec airflow-scheduler python -m f1_pipeline.ingestion.backfill --start 2020 --end 2023
 ```
 
 ### 6. Verify Data
 ```bash
 # List Bronze layer files
 docker-compose exec airflow-scheduler python -c "
-from f1_data.minio.object_store import F1ObjectStore
-from f1_data.ingestion.config import *
+from f1_pipeline.minio.object_store import F1ObjectStore
+from f1_pipeline.ingestion.config import *
 store = F1ObjectStore(MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
 objects = store.list_objects('ergast/endpoint=races')
 print(f'Found {len(objects)} files')
@@ -245,7 +245,7 @@ f1_pipeline/
 │   └── ingestion_dag.py          # Airflow DAG definition
 │
 ├── src/
-│   └── f1_data/
+│   └── f1_pipeline/
 │       ├── ingestion/
 │       │   ├── __init__.py       # Module exports
 │       │   ├── ingestor.py       # Core extraction engine
@@ -295,7 +295,7 @@ f1_pipeline/
 
 **Backfill specific seasons:**
 ```bash
-python -m f1_data.ingestion.backfill \
+python -m f1_pipeline.ingestion.backfill \
   --start 2015 \
   --end 2023 \
   --batch-id "historical_load_v1"
@@ -304,16 +304,16 @@ python -m f1_data.ingestion.backfill \
 **Backfill with error handling:**
 ```bash
 # Skip failed seasons and continue
-python -m f1_data.ingestion.backfill --start 1950 --end 2023
+python -m f1_pipeline.ingestion.backfill --start 1950 --end 2023
 
 # Stop on first error
-python -m f1_data.ingestion.backfill --start 1950 --end 2023 --no-skip-on-error
+python -m f1_pipeline.ingestion.backfill --start 1950 --end 2023 --no-skip-on-error
 ```
 
 ### Programmatic Usage
 
 ```python
-from f1_data.ingestion import F1DataIngestor
+from f1_pipeline.ingestion import F1DataIngestor
 from datetime import datetime
 
 # Initialize ingestor
@@ -425,7 +425,7 @@ make docker-up
 pytest tests/ -v -m integration
 
 # Coverage report
-pytest tests/ --cov=src/f1_data --cov-report=html
+pytest tests/ --cov=src/f1_pipeline --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -557,7 +557,7 @@ max_active_runs=1  # In DAG config
 export AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
 
 # Run extraction with verbose output
-python -m f1_data.ingestion.backfill --start 2024 --end 2024 -v
+python -m f1_pipeline.ingestion.backfill --start 2024 --end 2024 -v
 ```
 
 ---
