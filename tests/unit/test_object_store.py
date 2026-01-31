@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch, call
 from f1_pipeline.minio.object_store import F1ObjectStore
 from botocore.exceptions import ClientError
 
+# Test Constants
+PLACEHOLDER_VAL = "not_a_real_secret"
+
 @pytest.fixture
 def mock_s3_client():
     return MagicMock()
@@ -16,8 +19,8 @@ def store(mock_s3_client):
     return F1ObjectStore(
         bucket_name="test-bucket",
         endpoint_url="http://mock-minio:9000",
-        access_key=os.getenv("MINIO_ACCESS_KEY", "dummy"),
-        secret_key=os.getenv("MINIO_SECRET_KEY", "dummy"),
+        access_key=os.getenv("MINIO_ACCESS_KEY", PLACEHOLDER_VAL),
+        secret_key=os.getenv("MINIO_SECRET_KEY", PLACEHOLDER_VAL),
         client=mock_s3_client
     )
 
@@ -27,8 +30,8 @@ def test_init_creates_client_with_region(mock_env):
         _ = F1ObjectStore(
             bucket_name="test",
             endpoint_url="http://url",
-            access_key=os.getenv("TEST_KEY", "dummy"),
-            secret_key=os.getenv("TEST_SECRET", "dummy")
+            access_key=os.getenv("TEST_KEY", PLACEHOLDER_VAL),
+            secret_key=os.getenv("TEST_SECRET", PLACEHOLDER_VAL)
         )
         # Check if region_name was passed
         _, kwargs = mock_boto.call_args

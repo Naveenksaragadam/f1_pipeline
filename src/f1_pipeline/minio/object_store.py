@@ -242,7 +242,8 @@ class F1ObjectStore:
             content_encoding = 'gzip'
 
         # Calculate MD5 Checksum (Data Integrity)
-        md5_hash = hashlib.md5(data).digest()  # nosec
+        # nosec: B303 - MD5 is used for S3/MinIO Content-MD5 integrity, not security.
+        md5_hash = hashlib.new('md5', data, usedforsecurity=False).digest()  # nosec B303
         md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
 
         try:
