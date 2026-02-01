@@ -194,6 +194,31 @@ services:
         limits:
           memory: 1G
 
+  # --- DBT ---
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-clickhouse:1.8.3
+    container_name: f1_dbt
+    working_dir: /usr/app/dbt
+    volumes:
+      - .:/usr/app
+      - ./dbt/profiles.yml:/root/.dbt/profiles.yml
+    environment:
+      # ClickHouse Connection
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: f1_analytics
+      # dbt Config
+      DBT_PROFILES_DIR: /root/.dbt
+      DBT_PROJECT_DIR: /usr/app/dbt
+    depends_on:
+      clickhouse:
+        condition: service_started
+    profiles:
+      - tools
+    command: debug
+
 volumes:
   postgres-db-volume:
   clickhouse_data:
