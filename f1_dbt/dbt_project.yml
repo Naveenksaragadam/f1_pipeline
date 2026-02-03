@@ -4,6 +4,7 @@
 # name or the intended use of these models
 name: 'f1_dbt'
 version: '1.0.0'
+config-version: 2
 
 # This setting configures which "profile" dbt uses for this project.
 profile: 'f1_dbt'
@@ -18,10 +19,8 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
-clean-targets:         # directories to be removed by `dbt clean`
-  - "target"
-  - "dbt_packages"
-
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
 
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
@@ -34,3 +33,27 @@ models:
     # Config indicated by + and applies to all files under models/example/
     example:
       +materialized: view
+    staging:
+      # Base views (read from S3)
+      base:
+        +schema: staging        # Creates staging.base_*
+        +materialized: view     # Don't materialize (just a view)
+        +tags: ['base', 'staging']
+      
+      # Staging tables (materialized)
+      +schema: silver            # Creates silver.stg_*
+      +materialized: table       # Default: materialize as table
+      +tags: ['staging']
+      
+vars:
+  # MinIO connection
+  minio_endpoint: "http://minio:9000"
+  minio_access_key: "{{ env_var('MINIO_ACCESS_KEY', 'minioadmin') }}"
+  minio_secret_key: "{{ env_var('MINIO_SECRET_KEY', 'password') }}"
+  
+  # S3 buckets
+  bronze_bucket: "bronze"
+  
+  # Data patterns
+  start_year: 1950
+  current_year: 2026
