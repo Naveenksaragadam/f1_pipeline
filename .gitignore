@@ -50,6 +50,7 @@ docs/dev_docs/
 dbt_modules/
 dbt_packages/
 target/
+f1_dbt/.user.yml
 
 # OS
 .DS_Store
