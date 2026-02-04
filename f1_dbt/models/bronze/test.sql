@@ -1,4 +1,6 @@
-select *
+select
+    jsonextractstring(season, 'season') as season_year,
+    jsonextractstring(season, 'url') as season_url
 from
     s3(
         'http://minio:9000/bronze/ergast/endpoint=seasons/**/*.json',
@@ -7,5 +9,5 @@ from
         'JSONAsString',
         'json String',
         'gzip'
-    )
-limit 500
+    ) as season
+;
