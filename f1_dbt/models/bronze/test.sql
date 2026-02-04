@@ -1,13 +1,15 @@
+{{ config(materialized="view", schema="staging", tags=["base", "seasons"]) }}
+
 select
-    jsonextractstring(season, 'season') as season_year,
-    jsonextractstring(season, 'url') as season_url
+    _path as file_path,
+    json_content as raw_json
 from
     s3(
-        'http://minio:9000/bronze/ergast/endpoint=seasons/**/*.json',
-        'minioadmin',
-        'password',
-        'JSONAsString',
-        'json String',
-        'gzip'
-    ) as season
+                '{{ var("minio_endpoint") }}/{{ var("bronze_bucket") }}/ergast/endpoint=seasons/**/*.json',
+                '{{ var("minio_access_key") }}',
+                '{{ var("minio_secret_key") }}',
+                'JSONAsString',
+                'json_content String', -- Required: Maps file content to this column name
+                'gzip'                 -- Required: Handles the compressed binary data
+            ) as season
 ;
