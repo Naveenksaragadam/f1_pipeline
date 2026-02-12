@@ -1,0 +1,49 @@
+version: 2
+
+sources:
+  # Bronze layer (MinIO S3)
+  - name: bronze
+    description: "Raw JSON data from F1 Ergast API stored in MinIO"
+    
+    # Metadata
+    meta:
+      owner: "data-engineering"
+      contains_pii: false 
+
+    # Tables (actually S3 paths)
+    tables:
+      # Seasons endpoint
+      - name: raw_seasons
+        description: "Raw JSON files for F1 seasons (1950-present)"
+
+        # This is a "virtual" table - it's actually an S3 path
+        meta:
+          # S3 location pattern
+          s3_path: "ergast/endpoint=seasons/**/*.json"
+          endpoint: "seasons"
+
+        # Schema (for documentation)
+          json_structure: |
+            {
+              "metadata": {
+                "batch_id": "20240130T120000",
+                "endpoint": "seasons",
+                "ingestion_timestamp": "2024-01-30T12:00:00Z"
+              },
+              "data": {
+                "MRData": {
+                  "SeasonTable": {
+                    "Seasons": [
+                      {"season": "1950", "url": "http://..."}
+                    ]
+                  }
+                }
+              }
+            }
+        
+        # Freshness checks (optional but recommended)
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 14, period: day}
+        
+        # We'll define the actual columns in the base model
