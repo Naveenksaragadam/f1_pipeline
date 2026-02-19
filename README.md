@@ -27,6 +27,7 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 ## ✨ Features
 
 ### Data Engineering Capabilities
+
 - **Medallion Architecture**: Strict Bronze → Silver → Gold layer separation
 - **Idempotent Processing**: Safe reruns with automatic duplicate detection
 - **Smart Refresh Strategy**: Force refresh for current season, skip historical data
@@ -35,6 +36,7 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 - **Rate Limiting**: Respects API quotas (4 req/sec, 200 req/min)
 
 ### Production Features
+
 - **Connection Pooling**: Optimized S3 client with 50 max connections
 - **Comprehensive Logging**: Structured logs with correlation IDs
 - **Error Recovery**: Graceful failure handling with detailed error messages
@@ -43,6 +45,7 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 - **Type Safety**: Full type hints for IDE support and safety
 
 ### Data Coverage
+
 - **75+ Years**: Historical data from 1950 to present
 - **13 Endpoints**: Comprehensive coverage of F1 data
   - Reference: seasons, circuits, status
@@ -125,12 +128,14 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 ## 📦 Prerequisites
 
 ### Required Software
+
 - **Docker Desktop**: 4.20+ ([Download](https://www.docker.com/products/docker-desktop))
 - **Docker Compose**: 2.20+ (included with Docker Desktop)
 - **Python**: 3.11+ ([Download](https://www.python.org/downloads/))
 - **Git**: Latest version
 
 ### System Requirements
+
 - **RAM**: Minimum 8GB (16GB recommended)
 - **Disk**: 20GB free space
 - **CPU**: 2+ cores
@@ -141,12 +146,14 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 ## 🚀 Quick Start
 
 ### 1. Clone Repository
+
 ```bash
 git clone https://github.com/Naveenksaragadam/f1_pipeline.git
 cd f1_pipeline
 ```
 
 ### 2. Set Up Environment
+
 ```bash
 # Copy example environment file
 cp .env.example .env
@@ -156,6 +163,7 @@ nano .env
 ```
 
 **Minimal `.env` configuration:**
+
 ```bash
 # MinIO Credentials
 MINIO_ACCESS_KEY=minioadmin
@@ -171,6 +179,7 @@ CLICKHOUSE_PASSWORD=
 ```
 
 ### 3. Start Services
+
 ```bash
 # Start all services (Airflow, MinIO, ClickHouse, Postgres)
 docker-compose up -d
@@ -180,7 +189,8 @@ docker-compose ps
 ```
 
 **Expected output:**
-```
+
+```text
 NAME                STATUS              PORTS
 f1_airflow_init     exited (0)         
 f1_airflow_scheduler running            
@@ -194,18 +204,20 @@ f1_postgres         running            5432/tcp
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| **Airflow UI** | http://localhost:8080 | `airflow` / `airflow` |
-| **MinIO Console** | http://localhost:9001 | `minioadmin` / `minioadmin` |
-| **ClickHouse** | http://localhost:8123 | `default` / (no password) |
+| **Airflow UI** | <http://localhost:8080> | `airflow` / `airflow` |
+| **MinIO Console** | <http://localhost:9001> | `minioadmin` / `minioadmin` |
+| **ClickHouse** | <http://localhost:8123> | `default` / (no password) |
 
 ### 5. Run Your First Extraction
 
-**Option A: Via Airflow UI**
-1. Navigate to http://localhost:8080
+#### Option A: Via Airflow UI
+
+1. Navigate to <http://localhost:8080>
 2. Enable the `f1_pipeline` DAG
 3. Click **Trigger DAG** (manually trigger for 2024 season)
 
-**Option B: Via Command Line**
+#### Option B: Via Command Line
+
 ```bash
 # Trigger DAG manually
 docker-compose exec airflow-scheduler airflow dags trigger f1_pipeline
@@ -215,6 +227,7 @@ docker-compose exec airflow-scheduler python -m f1_pipeline.ingestion.backfill -
 ```
 
 ### 6. Verify Data
+
 ```bash
 # List Bronze layer files
 docker-compose exec airflow-scheduler python -c "
@@ -231,7 +244,7 @@ print(objects[:5])
 
 ## 📁 Project Structure
 
-```
+```text
 f1_pipeline/
 ├── dags/
 │   └── ingestion_dag.py          # Airflow DAG definition
@@ -286,6 +299,7 @@ f1_pipeline/
 ### Manual Backfill
 
 **Backfill specific seasons:**
+
 ```bash
 python -m f1_pipeline.ingestion.backfill \
   --start 2015 \
@@ -294,6 +308,7 @@ python -m f1_pipeline.ingestion.backfill \
 ```
 
 **Backfill with error handling:**
+
 ```bash
 # Skip failed seasons and continue
 python -m f1_pipeline.ingestion.backfill --start 1950 --end 2023
@@ -326,6 +341,7 @@ print(f"API calls: {summary['api_calls_made']}")
 ### Airflow DAG Customization
 
 **Modify schedule in `dags/ingestion_dag.py`:**
+
 ```python
 with DAG(
     dag_id="f1_pipeline",
@@ -340,8 +356,6 @@ with DAG(
 ---
 
 ## 🔧 Development
-
-### Local Setup
 
 ### Local Setup
 
@@ -402,6 +416,7 @@ make docker-nuke
 ### Adding New Endpoints
 
 1. **Update `config.py`** - Add endpoint configuration:
+
 ```python
 ENDPOINT_CONFIG = {
     "your_endpoint": {
@@ -414,15 +429,16 @@ ENDPOINT_CONFIG = {
 }
 ```
 
-2. **Update `ingestor.py`** - Add to extraction flow:
+1. **Update `ingestor.py`** - Add to extraction flow:
+
 ```python
 for endpoint in ["results", "qualifying", "your_endpoint"]:
     self.ingest_endpoint(endpoint, batch_id, season=season, round_num=round_num)
 ```
 
-3. **Create Pydantic schema** in `transform/schemas.py`
+1. **Create Pydantic schema** in `transform/schemas.py`
 
-4. **Add tests** in `tests/test_ingestor.py`
+2. **Add tests** in `tests/test_ingestor.py`
 
 ---
 
@@ -461,6 +477,7 @@ open htmlcov/index.html
 ### Production Deployment
 
 1. **Update environment variables:**
+
 ```bash
 # Use production MinIO endpoint
 MINIO_ENDPOINT=https://minio.prod.example.com
@@ -470,12 +487,14 @@ CLICKHOUSE_HOST=clickhouse.prod.example.com
 CLICKHOUSE_PASSWORD=<secure_password>
 ```
 
-2. **Build production image:**
+1. **Build production image:**
+
 ```bash
 docker build -t f1-pipeline:v1.0.0 .
 ```
 
-3. **Deploy with docker-compose:**
+1. **Deploy with docker-compose:**
+
 ```bash
 docker-compose -f docker-compose.prod.yaml up -d
 ```
@@ -528,6 +547,7 @@ docker-compose exec clickhouse cat /var/log/clickhouse-server/clickhouse-server.
 ### Common Issues
 
 #### 1. MinIO 403 Forbidden Error
+
 ```bash
 # Error: An error occurred (403) when calling the HeadBucket operation: Forbidden
 
@@ -540,6 +560,7 @@ docker-compose up -d
 ```
 
 #### 2. Airflow Webserver Not Starting
+
 ```bash
 # Check initialization status
 docker-compose logs airflow-init
@@ -550,6 +571,7 @@ docker-compose up -d
 ```
 
 #### 3. API Rate Limit Errors
+
 ```bash
 # Symptoms: 429 Too Many Requests
 
@@ -559,6 +581,7 @@ API_RATE_LIMIT_PER_MIN=100  # Reduce from 200
 ```
 
 #### 4. Out of Memory Errors
+
 ```bash
 # Increase Docker memory allocation
 # Docker Desktop → Settings → Resources → Memory → 8GB+
@@ -623,31 +646,35 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/f1_pipeline/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/f1_pipeline/discussions)
-- **Email**: your.email@example.com
+- **Email**: <your.email@example.com>
 
 ---
 
 ## 🗺️ Roadmap
 
 ### Phase 1: Core Pipeline ✅
+
 - [x] Bronze layer ingestion
 - [x] 13 endpoint coverage
 - [x] Idempotent processing
 - [x] Airflow orchestration
 
 ### Phase 2: Silver Layer (In Progress)
+
 - [ ] Parquet transformation
 - [ ] Schema validation with Pydantic
 - [ ] Data quality tests
 - [ ] Deduplication logic
 
 ### Phase 3: Gold Layer (Planned)
+
 - [ ] ClickHouse table definitions
 - [ ] dbt models (facts & dimensions)
 - [ ] SCD Type 2 implementation
 - [ ] Materialized views
 
 ### Phase 4: Analytics (Future)
+
 - [ ] Apache Superset dashboards
 - [ ] Pre-built analytics queries
 - [ ] ML feature engineering
@@ -657,7 +684,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Built with ❤️ for the F1 community**
+#### Built with ❤️ for the F1 community
 
 [⭐ Star this repo](https://github.com/yourusername/f1_pipeline) | [🐛 Report Bug](https://github.com/yourusername/f1_pipeline/issues) | [✨ Request Feature](https://github.com/yourusername/f1_pipeline/issues)
 
