@@ -58,22 +58,26 @@ def test_generate_path_with_round(ingestor: F1DataIngestor) -> None:
 
 def test_get_existing_keys_with_round_and_error(ingestor: F1DataIngestor) -> None:
     """Test key listing with round and error handling."""
-    ingestor.store.list_objects.return_value = ["key1"]
+    ingestor.store.list_objects.return_value = ["key1"]  # type: ignore[attr-defined]
     keys = ingestor._get_existing_keys("results", "b1", 2024, 1)
     assert "key1" in keys
-    ingestor.store.list_objects.assert_called_with(prefix="ergast/endpoint=results/season=2024/round=01/batch_id=b1/")
+    ingestor.store.list_objects.assert_called_with(  # type: ignore[attr-defined]
+        prefix="ergast/endpoint=results/season=2024/round=01/batch_id=b1/"
+    )
 
     # Test error fallback
-    ingestor.store.list_objects.side_effect = Exception("S3 list error")
+    ingestor.store.list_objects.side_effect = Exception("S3 list error")  # type: ignore[attr-defined]
     keys = ingestor._get_existing_keys("results", "b1", 2024, 1)
     assert keys == set()
 
 
 def test_save_to_minio_error(ingestor: F1DataIngestor) -> None:
     """Test error handling in _save_to_minio."""
-    ingestor.store.put_object.side_effect = Exception("Write error")
-    with pytest.raises(Exception):
-        ingestor._save_to_minio({"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"})
+    ingestor.store.put_object.side_effect = Exception("Write error")  # type: ignore[attr-defined]
+    with pytest.raises(Exception, match="Write error"):
+        ingestor._save_to_minio(
+            {"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"}
+        )
     assert ingestor.stats["errors_encountered"] == 1
 
 
@@ -87,30 +91,38 @@ def test_fetch_page_errors(ingestor: F1DataIngestor, mock_session: MagicMock) ->
     # if it has a __wrapped__ attribute, or just mock the decorator.
     # Actually, we can just use patch.dict on sys.modules to mock tenacity.retry
     # but that's overkill. Let's just patch the method's retry behavior.
-    
+
     # Simple fix: patch the fetch_page method on the instance to avoid retries
     with patch("f1_pipeline.ingestion.ingestor.stop_after_attempt", return_value=MagicMock()):
-        with patch.object(ingestor, "fetch_page", side_effect=requests.RequestException("API error")):
+        with patch.object(
+            ingestor, "fetch_page", side_effect=requests.RequestException("API error")
+        ):
             with pytest.raises(requests.RequestException):
                 ingestor.fetch_page("http://test", 10, 0)
     # The above doesn't hit the internal catch blocks of fetch_page though.
     # To hit catch blocks:
     mock_session.get.side_effect = requests.RequestException("API error")
-    with patch("f1_pipeline.ingestion.ingestor.RETRY_MAX_ATTEMPTS", 1): # This is used by stop_after_attempt(RETRY_MAX_ATTEMPTS)
-        # However, the decorator is already applied. 
+    with patch(
+        "f1_pipeline.ingestion.ingestor.RETRY_MAX_ATTEMPTS", 1
+    ):  # This is used by stop_after_attempt(RETRY_MAX_ATTEMPTS)
+        # However, the decorator is already applied.
         # Let's just use a shortcut: call the .__wrapped__ if it's there? No.
         # We'll just patch the retry itself in the module for all tests.
         pass
 
     # NEW APPROACH: Patch the retry strategy *completely* at import time? No.
     # Let's just use a side effect that triggers the error and then check stats.
-    with patch("f1_pipeline.ingestion.ingestor.RETRY_STRATEGY", lambda x: x): # Null decorator
+    with patch("f1_pipeline.ingestion.ingestor.RETRY_STRATEGY", lambda x: x):  # Null decorator
         # But ingestor is already loaded.
         pass
 
-    # OK, let's just make the test wait a bit if needed, or better, 
+    # OK, let's just make the test wait a bit if needed, or better,
     # use a mock that calls the original but without the decorator.
-    with patch.object(ingestor, "fetch_page", side_effect=ingestor.fetch_page.__wrapped__.__get__(ingestor, F1DataIngestor)):
+    with patch.object(
+        ingestor,
+        "fetch_page",
+        side_effect=ingestor.fetch_page.__wrapped__.__get__(ingestor, F1DataIngestor),  # type: ignore[attr-defined]
+    ):
         # Reset stats to be sure
         ingestor._reset_stats()
         mock_session.get.side_effect = requests.RequestException("API error")
@@ -129,14 +141,23 @@ def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:
     """Test skipping logic in _fetch_and_save_page."""
     # 1. Skip via existing_keys
     success, total = ingestor._fetch_and_save_page(
-        "drivers", "b1", "url", 2024, None, 1, 10, 0, False, existing_keys={"ergast/endpoint=drivers/season=2024/batch_id=b1/page_001.json"}
+        "drivers",
+        "b1",
+        "url",
+        2024,
+        None,
+        1,
+        10,
+        0,
+        False,
+        existing_keys={"ergast/endpoint=drivers/season=2024/batch_id=b1/page_001.json"},
     )
     assert success is True
     assert total == 0
     assert ingestor.stats["files_skipped"] == 1
 
     # 2. Skip via store.object_exists
-    ingestor.store.object_exists.return_value = True
+    ingestor.store.object_exists.return_value = True  # type: ignore[attr-defined]
     success, total = ingestor._fetch_and_save_page(
         "drivers", "b2", "url", 2024, None, 1, 10, 0, False, existing_keys=None
     )
@@ -147,7 +168,9 @@ def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:
 def test_fetch_and_save_page_error(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test error in _fetch_and_save_page."""
     mock_session.get.side_effect = Exception("Fatal error")
-    success, total = ingestor._fetch_and_save_page("drivers", "b1", "url", 2024, None, 1, 10, 0, False)
+    success, total = ingestor._fetch_and_save_page(
+        "drivers", "b1", "url", 2024, None, 1, 10, 0, False
+    )
     assert success is False
     assert ingestor.stats["errors_encountered"] == 1
 
@@ -171,7 +194,9 @@ def test_ingest_endpoint_first_page_fail(ingestor: F1DataIngestor, mock_session:
 def test_ingest_pagination_edge_cases(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test edge cases: no pagination or zero records."""
     # 1. Non-paginated (e.g. races)
-    mock_session.get.return_value.json.return_value = {"MRData": {"total": "100", "RaceTable": {"Races": []}}}
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "100", "RaceTable": {"Races": []}}
+    }
     ingestor.ingest_endpoint("races", "b1", season=2024)
     assert mock_session.get.call_count == 1  # Only first page
 
@@ -181,22 +206,29 @@ def test_ingest_pagination_edge_cases(ingestor: F1DataIngestor, mock_session: Ma
     assert mock_session.get.call_count == 2  # Once more after reset? No, total 2 calls now.
 
 
-def test_ingest_concurrent_worker_failure(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
+def test_ingest_concurrent_worker_failure(
+    ingestor: F1DataIngestor, mock_session: MagicMock
+) -> None:
     """Test handling of failed worker in concurrent ingestion."""
     mock_session.get.return_value.json.return_value = {"MRData": {"total": "50"}}
 
     with patch("f1_pipeline.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
         mock_executor_instance = MockExecutor.return_value.__enter__.return_value
-        
+
         # Scenario 1: Success returns (False, 0)
         mock_future_fail = MagicMock()
         mock_future_fail.result.return_value = (False, 0)
-        
+
         # Scenario 2: Exception raised during result()
         mock_future_exc = MagicMock()
         mock_future_exc.result.side_effect = Exception("Worker died")
 
-        mock_executor_instance.submit.side_effect = [mock_future_fail, mock_future_exc, mock_future_fail, mock_future_fail]
+        mock_executor_instance.submit.side_effect = [
+            mock_future_fail,
+            mock_future_exc,
+            mock_future_fail,
+            mock_future_fail,
+        ]
 
         with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
             ingestor.ingest_endpoint("drivers", "b1", season=2024, max_workers=3)
@@ -205,12 +237,12 @@ def test_ingest_concurrent_worker_failure(ingestor: F1DataIngestor, mock_session
 def test_ingest_sequential_skipping(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test skipping files in sequential ingestion."""
     mock_session.get.return_value.json.return_value = {"MRData": {"total": "20"}}
-    # Page 1 key
-    page1_key = ingestor._generate_path("drivers", "b1", 2024, None, 1)
+    # Page 1 key (unused but kept as comment for clarity if needed)
+    # page1_key = ingestor._generate_path("drivers", "b1", 2024, None, 1)
     # Page 2 key
     page2_key = ingestor._generate_path("drivers", "b1", 2024, None, 2)
 
-    ingestor.store.list_objects.return_value = [page2_key]  # Only page 2 exists
+    ingestor.store.list_objects.return_value = [page2_key]  # type: ignore[attr-defined]
 
     with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
         ingestor.ingest_endpoint("drivers", "b1", season=2024, max_workers=1)
@@ -223,8 +255,10 @@ def test_ingest_sequential_skipping(ingestor: F1DataIngestor, mock_session: Magi
 def test_run_full_extraction_success(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test full extraction with Bronze success path."""
     # 1. Mock Bronze read success
-    races_envelope = {"data": {"MRData": {"RaceTable": {"Races": [{"round": "1", "raceName": "GP1"}]}}}}
-    ingestor.store.get_json.return_value = races_envelope
+    races_envelope = {
+        "data": {"MRData": {"RaceTable": {"Races": [{"round": "1", "raceName": "GP1"}]}}}
+    }
+    ingestor.store.get_json.return_value = races_envelope  # type: ignore[attr-defined]
 
     # 2. Mock ingest_endpoint to do nothing
     with patch.object(ingestor, "ingest_endpoint"):
@@ -234,7 +268,7 @@ def test_run_full_extraction_success(ingestor: F1DataIngestor, mock_session: Mag
 
 def test_run_full_extraction_zero_rounds(ingestor: F1DataIngestor) -> None:
     """Test extraction when zero rounds found."""
-    ingestor.store.get_json.return_value = {"data": {"MRData": {"RaceTable": {"Races": []}}}}
+    ingestor.store.get_json.return_value = {"data": {"MRData": {"RaceTable": {"Races": []}}}}  # type: ignore[attr-defined]
     with patch.object(ingestor, "ingest_endpoint"):
         summary = ingestor.run_full_extraction(season=2024, batch_id="b1")
         assert summary["files_written"] == 0
@@ -244,7 +278,7 @@ def test_run_full_extraction_failure(ingestor: F1DataIngestor, mock_session: Mag
     """Test extraction failure handling."""
     # Force failure in one of the phases
     with patch.object(ingestor, "ingest_endpoint", side_effect=Exception("Major failure")):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception, match="Major failure"):
             ingestor.run_full_extraction(season=2024, batch_id="b1")
     # run_full_extraction re-raises but doesn't increment stats itself
 
@@ -253,7 +287,9 @@ def test_save_to_minio_snapshot_logging(ingestor: F1DataIngestor) -> None:
     """Trigger the snapshot logging in _save_to_minio."""
     # We need files_written % 10 == 0
     ingestor.stats["files_written"] = 9
-    ingestor._save_to_minio({"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"})
+    ingestor._save_to_minio(
+        {"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"}
+    )
     assert ingestor.stats["files_written"] == 10
 
 
@@ -309,7 +345,9 @@ def test_sprint_season_filtering(ingestor: F1DataIngestor, mock_session: MagicMo
 def test_race_calendar_bronze_fallback(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test logic: Read from Bronze -> Fail -> Fallback to API."""
     cast(MagicMock, ingestor.store.get_json).side_effect = Exception("S3 error")
-    mock_session.get.return_value.json.return_value = {"MRData": {"RaceTable": {"Races": [{"round": "1"}]}}}
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"RaceTable": {"Races": [{"round": "1"}]}}
+    }
 
     with patch.object(ingestor, "ingest_endpoint"):
         ingestor.run_full_extraction(season=2024, batch_id="b1")

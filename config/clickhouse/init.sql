@@ -1,0 +1,6 @@
+-- Create databases for Medallion architecture
+CREATE DATABASE IF NOT EXISTS f1_analytics;
+CREATE DATABASE IF NOT EXISTS f1_staging;
+CREATE DATABASE IF NOT EXISTS bronze;
+CREATE DATABASE IF NOT EXISTS silver;
+CREATE DATABASE IF NOT EXISTS gold;

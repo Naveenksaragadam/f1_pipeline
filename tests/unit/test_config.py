@@ -1,6 +1,6 @@
-import sys
 import logging
-from unittest.mock import patch, MagicMock
+import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -27,13 +27,14 @@ def test_get_env_required_default() -> None:
 def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
     """Test module initialization when .env is not found (covers line 21)."""
     import importlib
+
     caplog.set_level(logging.INFO)
 
     # Patch at the source so the 'from dotenv import load_dotenv' pulls the mock
     with patch("dotenv.load_dotenv", return_value=False):
         # Reload to trigger the 'if not _env_found' block
         importlib.reload(config)
-    
+
     # Verify the log was produced
     assert any("No .env file found" in record.message for record in caplog.records)
 
@@ -41,7 +42,7 @@ def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
 def test_config_import_validation(caplog: pytest.LogCaptureFixture) -> None:
     """Test module-level validation call when not in pytest (covers line 238)."""
     import importlib
-    import sys
+
     caplog.set_level(logging.INFO)
 
     # Better: Patch sys.modules directly
@@ -51,12 +52,14 @@ def test_config_import_validation(caplog: pytest.LogCaptureFixture) -> None:
         temp_modules = sys.modules.copy()
         if "pytest" in temp_modules:
             del temp_modules["pytest"]
-        
+
         with patch.object(sys, "modules", temp_modules):
             # We don't mock validate_configuration because it overwrites it on reload.
             # We just check the log it produces.
             importlib.reload(config)
-            assert any("Configuration validation passed" in record.message for record in caplog.records)
+            assert any(
+                "Configuration validation passed" in record.message for record in caplog.records
+            )
     finally:
         sys.modules = original_modules
 
