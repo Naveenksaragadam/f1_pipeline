@@ -1,7 +1,5 @@
 # 🏎️ F1 Data Pipeline
 
-[![CI Pipeline](https://github.com/yourusername/f1_pipeline/workflows/CI%20Pipeline/badge.svg)](https://github.com/yourusername/f1_pipeline/actions)
-[![codecov](https://codecov.io/gh/yourusername/f1_pipeline/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/f1_pipeline)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -351,16 +349,19 @@ with DAG(
 
 ### Local Setup
 
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+### Local Setup
 
-# Install dependencies
+This project uses [uv](https://github.com/astral-sh/uv) for fast Python package management.
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies and set up virtual environment
 make install-dev
 
-# Install pre-commit hooks
-pre-commit install
+# Activate virtual environment
+source .venv/bin/activate
 ```
 
 ### Development Workflow
