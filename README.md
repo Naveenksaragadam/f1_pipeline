@@ -163,35 +163,33 @@ cd f1_pipeline
 
 ### 2. Set Up Environment
 
+This project uses `.env` for configuration and
+[uv](https://github.com/astral-sh/uv) and `make` for streamlined local
+development.
+
 ```bash
-# Copy example environment file
+# 1. Copy the example environment file
 cp .env.example .env
 
-# Edit with your credentials (or use defaults for local dev)
-nano .env
+# 2. Install uv package manager (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 3. Install dependencies and set up the local virtual environment
+make install-dev
+
+# 4. Activate the virtual environment
+source .venv/bin/activate
 ```
 
-**Minimal `.env` configuration:**
-
-```bash
-# MinIO Credentials
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-
-# API Settings
-API_PAGE_LIMIT=100
-
-# ClickHouse (optional for Bronze/Silver only)
-CLICKHOUSE_DB=f1_analytics
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=
-```
+_(Note: Review `.env.example` to see the full list of configurable limits and endpoints. The defaults work securely out of the box for local development)._
 
 ### 3. Start Services
 
+Use the provided `Makefile` to easily manage the Docker infrastructure.
+
 ```bash
 # Start all services (Airflow, MinIO, ClickHouse, Postgres)
-docker-compose up -d
+make docker-up
 
 # Verify services are healthy
 docker-compose ps
@@ -366,22 +364,6 @@ with DAG(
 ---
 
 ## 🔧 Development
-
-### Local Setup
-
-This project uses [uv](https://github.com/astral-sh/uv) for fast Python package
-management.
-
-```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies and set up virtual environment
-make install-dev
-
-# Activate virtual environment
-source .venv/bin/activate
-```
 
 ### Development Workflow
 
@@ -565,9 +547,9 @@ docker-compose exec clickhouse cat /var/log/clickhouse-server/clickhouse-server.
 # Solution: Verify credentials and restart MinIO
 docker-compose restart minio
 
-# Or recreate with correct credentials
-docker-compose down -v
-docker-compose up -d
+# Or recreate with correct credentials (WARNING: Data Loss)
+make docker-nuke
+make docker-up
 ```
 
 #### 2. Airflow Webserver Not Starting
@@ -576,9 +558,9 @@ docker-compose up -d
 # Check initialization status
 docker-compose logs airflow-init
 
-# Recreate database
-docker-compose down -v
-docker-compose up -d
+# Recreate database (WARNING: Data Loss)
+make docker-nuke
+make docker-up
 ```
 
 #### 3. API Rate Limit Errors
@@ -658,9 +640,9 @@ for details.
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/f1_pipeline/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/f1_pipeline/discussions)
-- **Email**: <your.email@example.com>
+- **Issues**: [GitHub Issues](https://github.com/Naveenksaragadam/f1_pipeline/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Naveenksaragadam/f1_pipeline/discussions)
+- **Email**: <naveen.saragdam.de@gmail.com>
 
 ---
 
@@ -698,6 +680,6 @@ for details.
 
 Built with ❤️ for the F1 community
 
-[⭐ Star this repo](https://github.com/yourusername/f1_pipeline) |
-[🐛 Report Bug](https://github.com/yourusername/f1_pipeline/issues) |
-[✨ Request Feature](https://github.com/yourusername/f1_pipeline/issues)
+[⭐ Star this repo](https://github.com/Naveenksaragadam/f1_pipeline) |
+[🐛 Report Bug](https://github.com/Naveenksaragadam/f1_pipeline/issues) |
+[✨ Request Feature](https://github.com/Naveenksaragadam/f1_pipeline/issues)
