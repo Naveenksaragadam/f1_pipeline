@@ -2,13 +2,14 @@
 
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from requests_ratelimiter import LimiterSession
+from urllib3.util.retry import Retry
+
 from ..config import (
-    DEFAULT_HEADERS,
-    API_RATE_PER_SEC,
-    API_RATE_PER_MIN,
     API_BURST,
+    API_RATE_PER_MIN,
+    API_RATE_PER_SEC,
+    DEFAULT_HEADERS,
     RETRY_MAX_ATTEMPTS,
 )
 

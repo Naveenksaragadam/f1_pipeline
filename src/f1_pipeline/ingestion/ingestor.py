@@ -13,35 +13,38 @@ Key Improvements:
 """
 
 import logging
-from requests import RequestException
-from typing import Dict, Any, Optional, Set, Tuple
-from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
+from typing import Any
+
+import requests
+from requests import RequestException
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
+)
+
+from f1_pipeline.minio.object_store import F1ObjectStore
+
+from ..config import (
+    BASE_URL,
+    DEFAULT_LIMIT,
+    ENDPOINT_CONFIG,
+    MAX_CONCURRENT_WORKERS,
+    MINIO_ACCESS_KEY,
+    MINIO_BUCKET_BRONZE,
+    MINIO_ENDPOINT,
+    MINIO_SECRET_KEY,
+    RETRY_MAX_ATTEMPTS,
+    RETRY_MAX_WAIT,
+    RETRY_MIN_WAIT,
 )
 
 # Internal Imports
 from .http_client import create_session
-from ..config import (
-    BASE_URL,
-    DEFAULT_LIMIT,
-    MINIO_BUCKET_BRONZE,
-    MINIO_ENDPOINT,
-    MINIO_ACCESS_KEY,
-    MINIO_SECRET_KEY,
-    ENDPOINT_CONFIG,
-    RETRY_MAX_ATTEMPTS,
-    RETRY_MIN_WAIT,
-    RETRY_MAX_WAIT,
-    MAX_CONCURRENT_WORKERS,
-)
-from f1_pipeline.minio.object_store import F1ObjectStore
-
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,10 @@ class F1DataIngestor:
     """
 
     def __init__(
-        self, base_url: str = BASE_URL, session=None, validate_connection: bool = True
+        self,
+        base_url: str = BASE_URL,
+        session: requests.Session | None = None,
+        validate_connection: bool = True,
     ) -> None:
         """
         Initialize the ingestor with HTTP session and object store.
@@ -129,8 +135,8 @@ class F1DataIngestor:
         self,
         endpoint: str,
         batch_id: str,
-        season: Optional[int],
-        round_num: Optional[int],
+        season: int | None,
+        round_num: int | None,
         page: int,
     ) -> str:
         """
@@ -154,9 +160,9 @@ class F1DataIngestor:
         self,
         endpoint: str,
         batch_id: str,
-        season: Optional[int],
-        round_num: Optional[int],
-    ) -> Set[str]:
+        season: int | None,
+        round_num: int | None,
+    ) -> set[str]:
         """
         Batch fetch existing object keys for an endpoint to minimize S3 HEAD requests.
         """
@@ -174,19 +180,13 @@ class F1DataIngestor:
         # List all objects with this prefix
         try:
             existing_keys = self.store.list_objects(prefix=prefix)
-            logger.debug(
-                f"Found {len(existing_keys)} existing files for prefix: {prefix}"
-            )
+            logger.debug(f"Found {len(existing_keys)} existing files for prefix: {prefix}")
             return set(existing_keys)
         except Exception as e:
-            logger.warning(
-                f"Failed to list existing objects: {e}. Will check individually."
-            )
+            logger.warning(f"Failed to list existing objects: {e}. Will check individually.")
             return set()
 
-    def _save_to_minio(
-        self, data: Dict[str, Any], path: str, metadata: Dict[str, Any]
-    ) -> None:
+    def _save_to_minio(self, data: dict[str, Any], path: str, metadata: dict[str, Any]) -> None:
         """
         Save data to MinIO with metadata envelope.
         """
@@ -216,7 +216,7 @@ class F1DataIngestor:
             raise
 
     @RETRY_STRATEGY
-    def fetch_page(self, url: str, limit: int, offset: int) -> Dict[str, Any]:
+    def fetch_page(self, url: str, limit: int, offset: int) -> dict[str, Any]:
         """
         Fetch a single page from the API with automatic retries.
         """
@@ -228,7 +228,7 @@ class F1DataIngestor:
             response.raise_for_status()
 
             self.stats["api_calls_made"] += 1
-            data = response.json()
+            data: dict[str, Any] = response.json()
 
             return data
 
@@ -247,19 +247,17 @@ class F1DataIngestor:
         endpoint_name: str,
         batch_id: str,
         full_url: str,
-        season: Optional[int],
-        round_num: Optional[int],
+        season: int | None,
+        round_num: int | None,
         page: int,
         limit: int,
         offset: int,
         force_refresh: bool,
-        existing_keys: Optional[Set[str]] = None,
-    ) -> Tuple[bool, int]:
+        existing_keys: set[str] | None = None,
+    ) -> tuple[bool, int]:
         """Fetch and save a single page (used for concurrent processing)."""
         try:
-            s3_key = self._generate_path(
-                endpoint_name, batch_id, season, round_num, page
-            )
+            s3_key = self._generate_path(endpoint_name, batch_id, season, round_num, page)
 
             if not force_refresh:
                 # Check provided batch set or fallback to individual check
@@ -276,7 +274,7 @@ class F1DataIngestor:
             total_records = int(mr_data.get("total", 0))
 
             metadata = {
-                "ingestion_timestamp": datetime.now(timezone.utc).isoformat(),
+                "ingestion_timestamp": datetime.now(UTC).isoformat(),
                 "batch_id": batch_id,
                 "endpoint": endpoint_name,
                 "season": season,
@@ -292,9 +290,7 @@ class F1DataIngestor:
             return (True, total_records)
 
         except Exception as e:
-            logger.error(
-                f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True
-            )
+            logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
             self.stats["errors_encountered"] += 1
             return (False, 0)
 
@@ -302,8 +298,8 @@ class F1DataIngestor:
         self,
         endpoint_name: str,
         batch_id: str,
-        season: Optional[int] = None,
-        round_num: Optional[int] = None,
+        season: int | None = None,
+        round_num: int | None = None,
         force_refresh: bool = False,
         max_workers: int = 1,
     ) -> None:
@@ -358,9 +354,7 @@ class F1DataIngestor:
         else:
             total_pages = (total_records + limit - 1) // limit
 
-        logger.info(
-            f"📊 {endpoint_name}: {total_records} records across {total_pages} page(s)"
-        )
+        logger.info(f"📊 {endpoint_name}: {total_records} records across {total_pages} page(s)")
 
         if total_pages <= 1:
             return
@@ -371,9 +365,7 @@ class F1DataIngestor:
         if max_workers > 1 and len(remaining_pages) >= 2:
             existing_keys = set()
             if not force_refresh:
-                existing_keys = self._get_existing_keys(
-                    endpoint_name, batch_id, season, round_num
-                )
+                existing_keys = self._get_existing_keys(endpoint_name, batch_id, season, round_num)
 
             logger.info(
                 f"Fetching {len(remaining_pages)} pages concurrently (workers={max_workers})"
@@ -409,15 +401,11 @@ class F1DataIngestor:
             # Sequential fallback (optimized)
             existing_keys = set()
             if not force_refresh:
-                existing_keys = self._get_existing_keys(
-                    endpoint_name, batch_id, season, round_num
-                )
+                existing_keys = self._get_existing_keys(endpoint_name, batch_id, season, round_num)
 
             for page in remaining_pages:
                 offset = (page - 1) * limit
-                s3_key = self._generate_path(
-                    endpoint_name, batch_id, season, round_num, page
-                )
+                s3_key = self._generate_path(endpoint_name, batch_id, season, round_num, page)
 
                 if not force_refresh and s3_key in existing_keys:
                     self.stats["files_skipped"] += 1
@@ -443,7 +431,7 @@ class F1DataIngestor:
         batch_id: str,
         force_refresh: bool = False,
         concurrency_enabled: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Orchestrate full season extraction following dependency graph.
 
@@ -486,12 +474,8 @@ class F1DataIngestor:
                     max_workers=1,
                 )
 
-            phase_timings["reference_data"] = (
-                datetime.now() - phase_start
-            ).total_seconds()
-            logger.info(
-                f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n"
-            )
+            phase_timings["reference_data"] = (datetime.now() - phase_start).total_seconds()
+            logger.info(f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n")
 
             # ============================================================
             # PHASE 2: Season-Level Data
@@ -508,9 +492,7 @@ class F1DataIngestor:
                     max_workers=MAX_WORKERS,
                 )
 
-            phase_timings["season_data"] = (
-                datetime.now() - phase_start
-            ).total_seconds()
+            phase_timings["season_data"] = (datetime.now() - phase_start).total_seconds()
             logger.info(f"✅ Phase 2 Complete: {phase_timings['season_data']:.2f}s\n")
 
             # ============================================================
@@ -532,21 +514,13 @@ class F1DataIngestor:
                     f"   Falling back to API fetch..."
                 )
                 schedule_url = f"{self.base_url}/{season}.json"
-                schedule_data = self.fetch_page(
-                    schedule_url, limit=DEFAULT_LIMIT, offset=0
-                )
-                races_list = (
-                    schedule_data.get("MRData", {})
-                    .get("RaceTable", {})
-                    .get("Races", [])
-                )
+                schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
+                races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
 
             total_rounds = len(races_list)
             logger.info(f"📅 Found {total_rounds} rounds for season {season}")
 
-            phase_timings["calendar_parse"] = (
-                datetime.now() - phase_start
-            ).total_seconds()
+            phase_timings["calendar_parse"] = (datetime.now() - phase_start).total_seconds()
 
             if total_rounds == 0:
                 logger.warning(f"⚠️  No races found for season {season}")
@@ -607,9 +581,7 @@ class F1DataIngestor:
                     f"{'─' * 70}"
                 )
 
-            phase_timings["race_data"] = (
-                datetime.now() - race_phase_start
-            ).total_seconds()
+            phase_timings["race_data"] = (datetime.now() - race_phase_start).total_seconds()
 
             return self._generate_summary(extraction_start, phase_timings)
 
@@ -623,14 +595,14 @@ class F1DataIngestor:
     def _generate_summary(
         self,
         start_time: datetime,
-        phase_timings: Optional[Dict[str, float]] = None,
-    ) -> Dict[str, Any]:
+        phase_timings: dict[str, float] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate extraction summary with statistics.
         """
         duration = (datetime.now() - start_time).total_seconds()
 
-        summary = {
+        summary: dict[str, Any] = {
             "status": "SUCCESS" if self.stats["errors_encountered"] == 0 else "PARTIAL",
             "duration_seconds": round(duration, 2),
             "duration_minutes": round(duration / 60, 2),
@@ -638,9 +610,7 @@ class F1DataIngestor:
         }
 
         if phase_timings:
-            summary["phase_timings"] = {
-                k: round(v, 2) for k, v in phase_timings.items()
-            }
+            summary["phase_timings"] = {k: round(v, 2) for k, v in phase_timings.items()}
 
         logger.info(
             f"\n{'=' * 70}\n"

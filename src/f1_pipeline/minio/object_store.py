@@ -3,17 +3,20 @@
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """
 
+import base64
+import gzip
+import hashlib
 import io
 import json
-import gzip
-import boto3
-import base64
-import hashlib
 import logging
-from botocore.client import Config
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Dict, List, Union, Optional, Tuple, IO
-from botocore.exceptions import ClientError, BotoCoreError
+from typing import IO, Any
+
+import boto3
+from botocore.client import Config
+from botocore.exceptions import BotoCoreError, ClientError
+
 from ..config import MINIO_REGION
 
 logger = logging.getLogger(__name__)
@@ -37,7 +40,7 @@ class F1ObjectStore:
         endpoint_url: str,
         access_key: str,
         secret_key: str,
-        client: Optional[Any] = None,
+        client: Any | None = None,
         max_pool_connections: int = 50,
     ) -> None:
         """
@@ -162,14 +165,10 @@ class F1ObjectStore:
         for page in paginator.paginate(Bucket=self.bucket_name):
             if "Contents" in page:
                 objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
-                self.client.delete_objects(
-                    Bucket=self.bucket_name, Delete={"Objects": objects}
-                )
+                self.client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": objects})
                 logger.debug(f"Deleted {len(objects)} objects from {self.bucket_name}")
 
-    def _serialize_body(
-        self, body: Union[Dict, List, str, bytes]
-    ) -> Tuple[Union[str, bytes], str]:
+    def _serialize_body(self, body: dict | list | str | bytes) -> tuple[str | bytes, str]:
         """
         Serialize data for S3 upload.
 
@@ -189,8 +188,8 @@ class F1ObjectStore:
     def put_object(
         self,
         key: str,
-        body: Union[Dict, List, str, bytes, bytearray, memoryview, IO, io.BytesIO],
-        metadata: Optional[Dict[str, str]] = None,
+        body: dict | list | str | bytes | bytearray | memoryview | IO | io.BytesIO,
+        metadata: dict[str, str] | None = None,
         compress: bool = True,
     ) -> None:
         """
@@ -247,7 +246,7 @@ class F1ObjectStore:
 
         try:
             # Prepare arguments for put_object
-            put_params = {
+            put_params: dict[str, Any] = {
                 "Bucket": self.bucket_name,
                 "Key": key,
                 "Body": data,
@@ -265,11 +264,7 @@ class F1ObjectStore:
             self.client.put_object(**put_params)
 
             # Logging
-            logger.debug(
-                f"✅ Uploaded {key} | "
-                f"Size: {len(data):,} bytes | "
-                f"Compressed: {compress}"
-            )
+            logger.debug(f"✅ Uploaded {key} | Size: {len(data):,} bytes | Compressed: {compress}")
 
         except ClientError as e:
             error = e.response.get("Error", {})
@@ -284,10 +279,7 @@ class F1ObjectStore:
 
         except BotoCoreError as e:
             logger.error(
-                f"❌ BotoCoreError - "
-                f"Bucket: {self.bucket_name}, "
-                f"Key: {key}, "
-                f"Error: {str(e)}"
+                f"❌ BotoCoreError - Bucket: {self.bucket_name}, Key: {key}, Error: {str(e)}"
             )
             raise
 
@@ -315,9 +307,7 @@ class F1ObjectStore:
             logger.error(f"❌ Error checking object {key}: {e}")
             raise
 
-    def list_objects(
-        self, prefix: str = "", max_keys: Optional[int] = None
-    ) -> List[str]:
+    def list_objects(self, prefix: str = "", max_keys: int | None = None) -> list[str]:
         """
         List objects in bucket with optional prefix filter.
 
@@ -340,7 +330,7 @@ class F1ObjectStore:
                 PaginationConfig=pagination_config,
             )
 
-            keys = []
+            keys: list[str] = []
             for page in pages:
                 if "Contents" in page:
                     keys.extend(obj["Key"] for obj in page["Contents"])
@@ -372,14 +362,16 @@ class F1ObjectStore:
             if response.get("ContentEncoding") == "gzip":
                 content = gzip.decompress(content)
 
+            from typing import cast
+
             logger.debug(f"✅ Downloaded {key} ({len(content):,} bytes)")
-            return content
+            return cast(bytes, content)
         except ClientError as e:
             logger.error(f"❌ Failed to get object {key}: {e}")
             raise
 
     @contextmanager
-    def stream_object(self, key: str):
+    def stream_object(self, key: str) -> Iterator[Any]:
         """
         Stream object content to avoid loading large files into memory.
 
@@ -399,7 +391,7 @@ class F1ObjectStore:
             logger.error(f"❌ Failed to stream {key}: {e}")
             raise
 
-    def get_json(self, key: str) -> Dict[str, Any]:
+    def get_json(self, key: str) -> dict[str, Any]:
         """
         Download and parse JSON object.
 
@@ -415,7 +407,7 @@ class F1ObjectStore:
         """
         try:
             content = self.get_object(key)
-            data = json.loads(content.decode("utf-8"))
+            data: dict[str, Any] = json.loads(content.decode("utf-8"))
             logger.debug(f"✅ Parsed JSON from {key}")
             return data
         except json.JSONDecodeError as e:
@@ -439,7 +431,7 @@ class F1ObjectStore:
             logger.error(f"❌ Failed to delete {key}: {e}")
             raise
 
-    def get_object_metadata(self, key: str) -> Dict[str, Any]:
+    def get_object_metadata(self, key: str) -> dict[str, Any]:
         """
         Get object metadata without downloading the object.
 

@@ -1,9 +1,10 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.fixture
-def mock_env(monkeypatch):
+def mock_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """
     Sets up a mock environment for testing.
     Ensures no real API calls or S3 connections are attempted.
@@ -29,6 +30,6 @@ def mock_env(monkeypatch):
 
 
 @pytest.fixture
-def mock_s3_client():
+def mock_s3_client() -> MagicMock:
     """Returns a magic mock for boto3 client"""
     return MagicMock()

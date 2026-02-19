@@ -3,11 +3,11 @@ Configuration module for F1 Data Pipeline.
 Loads environment variables and defines endpoint specifications.
 """
 
+import logging
 import os
 import sys
-import logging
-from typing import Dict
-from dotenv import load_dotenv, find_dotenv
+
+from dotenv import find_dotenv, load_dotenv
 
 # --- LOGGING CONFIG ---
 logging.basicConfig(
@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 # --- ENV LOADING ---
 _env_found = load_dotenv(find_dotenv())
 if not _env_found:
-    logger.info(
-        "ℹ️  No .env file found. Using environment variables from system/Docker."
-    )
+    logger.info("ℹ️  No .env file found. Using environment variables from system/Docker.")
 
 
 def get_env_required(key: str, default: str | None = None) -> str:
@@ -40,9 +38,7 @@ def get_env_required(key: str, default: str | None = None) -> str:
     value = os.getenv(key, default)
     if value is None:
         logger.error(f"❌ Required environment variable '{key}' is not set!")
-        logger.error(
-            "Please check your .env file or docker-compose environment section."
-        )
+        logger.error("Please check your .env file or docker-compose environment section.")
         sys.exit(1)
     return value
 
@@ -57,7 +53,7 @@ API_RATE_PER_SEC: int = int(os.getenv("API_RATE_LIMIT_PER_SEC", "4"))
 API_RATE_PER_MIN: int = int(os.getenv("API_RATE_LIMIT_PER_MIN", "200"))
 API_BURST: int = int(os.getenv("API_BURST_LIMIT", "10"))
 
-DEFAULT_HEADERS: Dict[str, str] = {
+DEFAULT_HEADERS: dict[str, str] = {
     "User-Agent": "F1-Data-Pipeline/1.0 (Production)",
     "Accept": "application/json",
 }
@@ -97,7 +93,7 @@ CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "")
 CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "f1_analytics")
 
 # --- 5. ENDPOINT STRATEGY (Business Rules) ---
-ENDPOINT_CONFIG: Dict[str, Dict] = {
+ENDPOINT_CONFIG: dict[str, dict] = {
     # --- Reference Data (Static or Rarely Changes) ---
     "seasons": {
         "group": "reference",

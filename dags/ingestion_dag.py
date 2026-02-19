@@ -5,17 +5,19 @@ Orchestrates yearly extraction with automatic force_refresh for current season.
 """
 
 import logging
+from typing import Any
+
 import pendulum
 from airflow import DAG  # type: ignore
-from airflow.operators.python import PythonOperator  # type: ignore
 from airflow.exceptions import AirflowException  # type: ignore
+from airflow.operators.python import PythonOperator  # type: ignore
 
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
 logger = logging.getLogger(__name__)
 
 
-def run_ingestion(**kwargs) -> None:
+def run_ingestion(**kwargs: Any) -> None:
     """
     Orchestrate F1 data ingestion with intelligent refresh strategy.
 
@@ -112,36 +114,33 @@ with DAG(
     tags=["f1", "bronze", "ingestion", "jolpica"],
     doc_md="""
     # F1 Bronze Layer Ingestion
-    
+
     Extracts Formula 1 data from the Jolpica API and stores raw JSON in the Bronze layer.
-    
+
     ## Extraction Strategy
     - **Historical Seasons**: Idempotent (skips existing files)
     - **Current Season**: Force refresh (penalties/updates may occur)
-    
+
     ## Data Coverage
     - Seasons: 2023 → Present
     - Endpoints: 13 (constructors, drivers, races, results, qualifying, etc.)
     - Storage: MinIO `bronze` bucket with Hive-style partitioning
-    
     ## Dependencies
     - MinIO (S3-compatible storage)
     - Jolpica API (https://api.jolpi.ca/ergast/f1)
-    
+
     ## Monitoring
     - Check task logs for ingestion statistics
     - XCom key `ingestion_stats` contains summary metrics
-    
+
     ## Error Handling
     - Automatic retries on transient failures
     - Rate limiting to respect API quotas
     - Detailed error logging with stack traces
     """,
 ) as dag:
-    ingest_task = PythonOperator(
+    ingest_task: PythonOperator = PythonOperator(
         task_id="extract_season_data",
         python_callable=run_ingestion,
         provide_context=True,
     )
-
-    ingest_task

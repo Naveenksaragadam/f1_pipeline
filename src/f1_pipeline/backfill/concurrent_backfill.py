@@ -2,13 +2,9 @@ import argparse
 import logging
 import sys
 from datetime import datetime
-from typing import List
 
 # INTERNAL IMPORT
-try:
-    from src.f1_pipeline.ingestion.ingestor import F1DataIngestor
-except ImportError:
-    from f1_pipeline.ingestion.ingestor import F1DataIngestor
+from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
 # Configure Logging for the Backfill Script
 logging.basicConfig(
@@ -19,15 +15,13 @@ logging.basicConfig(
 logger = logging.getLogger("F1Backfill")
 
 
-def generate_season_list(start_year: int, end_year: int) -> List[int]:
+def generate_season_list(start_year: int, end_year: int) -> list[int]:
     """Generates a list of seasons (years) to process."""
     return list(range(start_year, end_year + 1))
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run concurrent backfill for F1 Ergast API."
-    )
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run concurrent backfill for F1 Ergast API.")
 
     parser.add_argument(
         "--start_season",
@@ -55,9 +49,7 @@ def main():
     # validate inputs
     current_year = datetime.now().year
     if args.start_season < 1950 or args.end_season > current_year:
-        logger.error(
-            f"Invalid season range. F1 data exists from 1950 to {current_year}."
-        )
+        logger.error(f"Invalid season range. F1 data exists from 1950 to {current_year}.")
         sys.exit(1)
 
     if args.start_season > args.end_season:
@@ -95,9 +87,7 @@ def main():
             )
 
             if summary.get("status") != "SUCCESS":
-                logger.warning(
-                    f"⚠️ Season {season} completed with status: {summary.get('status')}"
-                )
+                logger.warning(f"⚠️ Season {season} completed with status: {summary.get('status')}")
 
         except KeyboardInterrupt:
             logger.warning("Backfill interrupted by user.")

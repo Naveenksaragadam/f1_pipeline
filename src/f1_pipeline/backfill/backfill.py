@@ -9,7 +9,8 @@ and recovery mechanisms. Use this for initial data loading or re-processing.
 import logging
 import sys
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any
+
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
 logging.basicConfig(
@@ -23,7 +24,7 @@ def run_manual_backfill(
     end_year: int | None = None,
     batch_id: str | None = None,
     skip_on_error: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute manual backfill for historical seasons.
 
@@ -65,8 +66,8 @@ def run_manual_backfill(
 
     # Track results
     total_seasons = end_year - start_year + 1
-    failed_seasons: List[int] = []
-    successful_seasons: List[int] = []
+    failed_seasons: list[int] = []
+    successful_seasons: list[int] = []
 
     logger.info(
         f"\n{'=' * 70}\n"
@@ -158,13 +159,13 @@ if __name__ == "__main__":
 Examples:
   # Backfill all historical data (1950 to previous year)
   python backfill.py
-  
+
   # Backfill specific year range
   python backfill.py --start 2015 --end 2023
-  
+
   # Backfill with custom batch ID
   python backfill.py --batch-id "initial_load_v1"
-  
+
   # Stop on first error
   python backfill.py --no-skip-on-error
         """,
