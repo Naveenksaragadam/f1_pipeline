@@ -107,7 +107,9 @@ def test_delete_bucket_force(store: F1ObjectStore, mock_s3_client: MagicMock) ->
 
 def test_delete_bucket_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test deletion error handling."""
-    mock_s3_client.delete_bucket.side_effect = ClientError({"Error": {"Code": "500", "Message": "Err"}}, "DeleteBucket")
+    mock_s3_client.delete_bucket.side_effect = ClientError(
+        {"Error": {"Code": "500", "Message": "Err"}}, "DeleteBucket"
+    )
     with pytest.raises(ClientError):
         store.delete_bucket()
 
@@ -165,6 +167,7 @@ def test_put_object_no_compression(store: F1ObjectStore, mock_s3_client: MagicMo
 def test_put_object_file_like(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test uploading a file-like object."""
     from io import BytesIO
+
     data = BytesIO(b"raw data")
     store.put_object("test.bin", data, compress=False)
 
@@ -183,6 +186,7 @@ def test_put_object_metadata(store: F1ObjectStore, mock_s3_client: MagicMock) ->
 def test_put_object_md5_failure(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test MD5 mismatch error handling."""
     from botocore.exceptions import BotoCoreError
+
     mock_s3_client.put_object.side_effect = BotoCoreError()
     with pytest.raises(BotoCoreError):
         store.put_object("test.json", {"d": 1})
@@ -231,9 +235,7 @@ def test_list_objects_max_keys(store: F1ObjectStore, mock_s3_client: MagicMock) 
     """Test listing with max_keys limit. Note: paginator handles truncation."""
     mock_paginator = MagicMock()
     # In reality, MaxItems in PaginationConfig would limit this
-    mock_paginator.paginate.return_value = [
-        {"Contents": [{"Key": "o1"}, {"Key": "o2"}]}
-    ]
+    mock_paginator.paginate.return_value = [{"Contents": [{"Key": "o1"}, {"Key": "o2"}]}]
     mock_s3_client.get_paginator.return_value = mock_paginator
     keys = store.list_objects(max_keys=2)
     assert keys == ["o1", "o2"]
@@ -290,14 +292,19 @@ def test_delete_object(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
 
 def test_delete_object_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test delete_object error handling."""
-    mock_s3_client.delete_object.side_effect = ClientError({"Error": {"Code": "403"}}, "DeleteObject")
+    mock_s3_client.delete_object.side_effect = ClientError(
+        {"Error": {"Code": "403"}}, "DeleteObject"
+    )
     with pytest.raises(ClientError):
         store.delete_object("key")
 
 
 def test_get_object_metadata(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test metadata retrieval."""
-    mock_s3_client.head_object.return_value = {"Metadata": {"v": "1"}, "ContentType": "application/json"}
+    mock_s3_client.head_object.return_value = {
+        "Metadata": {"v": "1"},
+        "ContentType": "application/json",
+    }
     result = store.get_object_metadata("key")
     assert result["metadata"] == {"v": "1"}
     assert result["content_type"] == "application/json"
@@ -320,7 +327,9 @@ def test_create_bucket_already_exists(store: F1ObjectStore, mock_s3_client: Magi
 def test_create_bucket_client_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test create_bucket error handling."""
     with patch.object(store, "bucket_exists", return_value=False):
-        mock_s3_client.create_bucket.side_effect = ClientError({"Error": {"Code": "500"}}, "CreateBucket")
+        mock_s3_client.create_bucket.side_effect = ClientError(
+            {"Error": {"Code": "500"}}, "CreateBucket"
+        )
         with pytest.raises(ClientError):
             store.create_bucket_if_not_exists()
 
@@ -339,7 +348,7 @@ def test_serialize_body_all_types(store: F1ObjectStore) -> None:
     assert ct == "application/octet-stream"
     assert body == b"bytes"
     # other/str
-    body, ct = store._serialize_body(123)
+    body, ct = store._serialize_body(123)  # type: ignore[arg-type]
     assert ct == "text/plain"
     assert body == "123"
 
@@ -357,7 +366,7 @@ def test_put_object_variations(store: F1ObjectStore, mock_s3_client: MagicMock) 
         Bucket=ANY, Key="key", Body=b"bytes", ContentType="application/octet-stream", ContentMD5=ANY
     )
     # unsupported (int) -> converted to str
-    store.put_object("key", 123, compress=False)
+    store.put_object("key", 123, compress=False)  # type: ignore[arg-type]
     mock_s3_client.put_object.assert_called_with(
         Bucket=ANY, Key="key", Body=b"123", ContentType="application/octet-stream", ContentMD5=ANY
     )
@@ -370,7 +379,11 @@ def test_put_object_file_like_variations(store: F1ObjectStore, mock_s3_client: M
     obj.read.return_value = "content"
     store.put_object("key", obj, compress=False)
     mock_s3_client.put_object.assert_called_with(
-        Bucket=ANY, Key="key", Body=b"content", ContentType="application/octet-stream", ContentMD5=ANY
+        Bucket=ANY,
+        Key="key",
+        Body=b"content",
+        ContentType="application/octet-stream",
+        ContentMD5=ANY,
     )
     # returning something else
     obj.read.return_value = 123
@@ -382,7 +395,9 @@ def test_put_object_file_like_variations(store: F1ObjectStore, mock_s3_client: M
 
 def test_put_object_client_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test put_object S3 ClientError."""
-    mock_s3_client.put_object.side_effect = ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "PutObject")
+    mock_s3_client.put_object.side_effect = ClientError(
+        {"Error": {"Code": "403", "Message": "Forbidden"}}, "PutObject"
+    )
     with pytest.raises(ClientError):
         store.put_object("key", {"a": 1})
 
@@ -393,5 +408,5 @@ def test_list_objects_client_error(store: F1ObjectStore, mock_s3_client: MagicMo
     mock_paginator = MagicMock()
     mock_paginator.paginate.side_effect = ClientError({"Error": {"Code": "500"}}, "ListObjectsV2")
     mock_s3_client.get_paginator.return_value = mock_paginator
-    
+
     assert store.list_objects() == []

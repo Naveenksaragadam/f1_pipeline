@@ -247,10 +247,10 @@ f1_pipeline/
 │       ├── ingestion/
 │       │   ├── __init__.py       # Module exports
 │       │   ├── ingestor.py       # Core extraction engine
-│       │   ├── config.py         # Configuration & validation
 │       │   ├── http_client.py    # HTTP session with retries
 │       │   └── backfill.py       # CLI backfill script
 │       │
+│       ├── config.py             # Configuration & validation
 │       ├── minio/
 │       │   ├── object_store.py   # S3/MinIO client wrapper
 │       │   └── init_storage.py   # Bucket initialization
@@ -381,6 +381,28 @@ make test
 
 # Run with coverage
 make test-cov
+```
+
+### Docker Management
+
+```bash
+# Start all services (Airflow, MinIO, ClickHouse, Postgres)
+make docker-up
+
+# Start only data infrastructure (MinIO, ClickHouse, Postgres) for local dev
+make docker-infra
+
+# Stop all services
+make docker-down
+
+# Tail logs for all containers
+make docker-logs
+
+# Open interactive shell in ClickHouse
+make docker-shell-clickhouse
+
+# Clean up all containers and volumes (Warning: Data Loss)
+make docker-nuke
 ```
 
 ### Adding New Endpoints
