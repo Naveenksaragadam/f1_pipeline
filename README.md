@@ -3,13 +3,17 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A **production-grade, open-source data platform** that ingests Formula 1 historical data from the Ergast API (via Jolpica) and serves it for analytical use cases. Built with industry best practices, this project demonstrates modern data engineering patterns suitable for FAANG-level system design interviews and real-world production deployments.
+A **production-grade, open-source data platform** that ingests Formula 1
+historical data from the Ergast API (via Jolpica) and serves it for analytical
+use cases. Built with industry best practices, this project demonstrates modern
+data engineering patterns suitable for FAANG-level system design interviews and
+real-world production deployments.
 
 ## 📋 Table of Contents
 
 - [Features](#-features)
-- [Architecture](#-architecture)
-- [Technology Stack](#-technology-stack)
+- [Architecture](#%EF%B8%8F-architecture)
+- [Technology Stack](#%EF%B8%8F-technology-stack)
 - [Prerequisites](#-prerequisites)
 - [Quick Start](#-quick-start)
 - [Project Structure](#-project-structure)
@@ -28,9 +32,10 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 
 ### Data Engineering Capabilities
 
-- **Medallion Architecture**: Strict Bronze → Silver → Gold layer separation
+- **Medallion Architecture**: strict Bronze → Silver → Gold separation
 - **Idempotent Processing**: Safe reruns with automatic duplicate detection
-- **Smart Refresh Strategy**: Force refresh for current season, skip historical data
+- **Smart Refresh Strategy**: Force refresh for current season, skip
+  historical data
 - **Automatic Pagination**: Handles large datasets with configurable page sizes
 - **Retry Logic**: Exponential backoff with configurable attempts
 - **Rate Limiting**: Respects API quotas (4 req/sec, 200 req/min)
@@ -61,6 +66,8 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 
 ### High-Level Design (Current & Planned)
 
+<!-- markdownlint-disable MD013 -->
+
 ```text
 ┌─────────────────┐
 │  Ergast API     │ (Jolpica Mirror)
@@ -89,7 +96,7 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 │  └──────────┘  └──────────┘                         │
 └─────────────────────────────────────────────────────┘
          │
-         ▼ 
+         ▼
 ┌─────────────────────────────────────────────────────┐
 │              ClickHouse OLAP                        │
 │  ┌──────────────┐  ┌──────────────┐                 │
@@ -101,27 +108,29 @@ A **production-grade, open-source data platform** that ingests Formula 1 histori
 
 ### Medallion Architecture
 
-| Layer | Format | Purpose | Status |
-|-------|--------|---------|--------|
-| **Bronze** | JSON | Raw immutable source data | ✅ Active |
-| **Silver** | Parquet | Cleaned, typed, validated (via Python/Pandas) | 🚧 WIP |
-| **Gold** | ClickHouse | Analytics-ready facts & dims (via dbt) | 📅 Planned |
+| Layer      | Format     | Purpose                                       | Status     |
+| ---------- | ---------- | --------------------------------------------- | ---------- |
+| **Bronze** | JSON       | Raw immutable source data                     | ✅ Active  |
+| **Silver** | Parquet    | Cleaned, typed, validated (via Python/Pandas) | 🚧 WIP     |
+| **Gold**   | ClickHouse | Analytics-ready facts & dims (via dbt)        | 📅 Planned |
 
 ---
 
 ## 🛠️ Technology Stack
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Orchestration** | Apache Airflow 2.10.3 | DAG-based workflow management |
-| **Storage** | MinIO (S3-compatible) | Object storage (Bronze/Silver layers) |
-| **Transformation** | Python 3.11 + Pandas | Data processing and validation |
-| **Data Warehouse** | ClickHouse 24.3 | High-performance OLAP database |
-| **Schema Validation** | Pydantic 2.x | Type-safe data validation |
-| **HTTP Client** | Requests + Tenacity | API calls with retry logic |
-| **Rate Limiting** | requests-ratelimiter | Client-side API throttling |
-| **Metadata Store** | PostgreSQL 13 | Airflow backend database |
-| **Container Runtime** | Docker + Docker Compose | Local development environment |
+| Component             | Technology              | Purpose                               |
+| --------------------- | ----------------------- | ------------------------------------- |
+| **Orchestration**     | Apache Airflow 2.10.3   | DAG-based workflow management         |
+| **Storage**           | MinIO (S3-compatible)   | Object storage (Bronze/Silver layers) |
+| **Transformation**    | Python 3.11 + Pandas    | Data processing and validation        |
+| **Data Warehouse**    | ClickHouse 24.3         | High-performance OLAP database        |
+| **Schema Validation** | Pydantic 2.x            | Type-safe data validation             |
+| **HTTP Client**       | Requests + Tenacity     | API calls with retry logic            |
+| **Rate Limiting**     | requests-ratelimiter    | Client-side API throttling            |
+| **Metadata Store**    | PostgreSQL 13           | Airflow backend database              |
+| **Container Runtime** | Docker + Docker Compose | Local development environment         |
+
+<!-- markdownlint-enable MD013 -->
 
 ---
 
@@ -192,8 +201,8 @@ docker-compose ps
 
 ```text
 NAME                STATUS              PORTS
-f1_airflow_init     exited (0)         
-f1_airflow_scheduler running            
+f1_airflow_init     exited (0)
+f1_airflow_scheduler running
 f1_airflow_webserver running            0.0.0.0:8080->8080/tcp
 f1_clickhouse       running            0.0.0.0:8123->8123/tcp, 0.0.0.0:9009->9000/tcp
 f1_minio            running            0.0.0.0:9000-9001->9000-9001/tcp
@@ -202,11 +211,11 @@ f1_postgres         running            5432/tcp
 
 ### 4. Access Web Interfaces
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| **Airflow UI** | <http://localhost:8080> | `airflow` / `airflow` |
+| Service           | URL                     | Credentials                 |
+| ----------------- | ----------------------- | --------------------------- |
+| **Airflow UI**    | <http://localhost:8080> | `airflow` / `airflow`       |
 | **MinIO Console** | <http://localhost:9001> | `minioadmin` / `minioadmin` |
-| **ClickHouse** | <http://localhost:8123> | `default` / (no password) |
+| **ClickHouse**    | <http://localhost:8123> | `default` / (no password)   |
 
 ### 5. Run Your First Extraction
 
@@ -223,7 +232,8 @@ f1_postgres         running            5432/tcp
 docker-compose exec airflow-scheduler airflow dags trigger f1_pipeline
 
 # Or run backfill for historical seasons
-docker-compose exec airflow-scheduler python -m f1_pipeline.ingestion.backfill --start 2020 --end 2023
+docker-compose exec airflow-scheduler \
+  python -m f1_pipeline.ingestion.backfill --start 2020 --end 2023
 ```
 
 ### 6. Verify Data
@@ -359,7 +369,8 @@ with DAG(
 
 ### Local Setup
 
-This project uses [uv](https://github.com/astral-sh/uv) for fast Python package management.
+This project uses [uv](https://github.com/astral-sh/uv) for fast Python package
+management.
 
 ```bash
 # Install uv (if not already installed)
@@ -464,11 +475,11 @@ open htmlcov/index.html
 
 ### Test Categories
 
-| Marker | Purpose | Requirements |
-|--------|---------|--------------|
-| (default) | Unit tests | None |
-| `@pytest.mark.integration` | Integration tests | Docker services |
-| `@pytest.mark.slow` | Long-running tests | None |
+| Marker                     | Purpose            | Requirements    |
+| -------------------------- | ------------------ | --------------- |
+| (default)                  | Unit tests         | None            |
+| `@pytest.mark.integration` | Integration tests  | Docker services |
+| `@pytest.mark.slow`        | Long-running tests | None            |
 
 ---
 
@@ -515,13 +526,13 @@ kubectl apply -f k8s/services/
 
 ### Key Metrics to Track
 
-| Metric | Source | Alert Threshold |
-|--------|--------|----------------|
-| DAG Success Rate | Airflow | < 95% |
-| Task Duration | Airflow | > 2x baseline |
-| API Calls Remaining | Application | < 50 calls/min |
-| Storage Usage | MinIO | > 80% capacity |
-| ClickHouse Query Latency | ClickHouse | p95 > 1s |
+| Metric                   | Source      | Alert Threshold |
+| ------------------------ | ----------- | --------------- |
+| DAG Success Rate         | Airflow     | < 95%           |
+| Task Duration            | Airflow     | > 2x baseline   |
+| API Calls Remaining      | Application | < 50 calls/min  |
+| Storage Usage            | MinIO       | > 80% capacity  |
+| ClickHouse Query Latency | ClickHouse  | p95 > 1s        |
 
 ### Log Locations
 
@@ -597,14 +608,16 @@ max_active_runs=1  # In DAG config
 export AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
 
 # Run extraction with verbose output
-python -m f1_pipeline.ingestion.backfill --start 2024 --end 2024 -v
+python -m f1_pipeline.ingestion.backfill \
+  --start 2024 --end 2024 -v
 ```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our
+[Contributing Guide](CONTRIBUTING.md) for details.
 
 ### Development Process
 
@@ -628,7 +641,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
 
 ---
 
@@ -682,10 +696,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-<div align="center">
+Built with ❤️ for the F1 community
 
-#### Built with ❤️ for the F1 community
-
-[⭐ Star this repo](https://github.com/yourusername/f1_pipeline) | [🐛 Report Bug](https://github.com/yourusername/f1_pipeline/issues) | [✨ Request Feature](https://github.com/yourusername/f1_pipeline/issues)
-
-</div>
+[⭐ Star this repo](https://github.com/yourusername/f1_pipeline) |
+[🐛 Report Bug](https://github.com/yourusername/f1_pipeline/issues) |
+[✨ Request Feature](https://github.com/yourusername/f1_pipeline/issues)
