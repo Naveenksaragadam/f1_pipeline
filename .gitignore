@@ -58,3 +58,4 @@ f1_dbt/.user.yml
 ._*
 # Snyk Security Extension - AI Rules (auto-generated)
 .agent/rules/snyk_rules.md
+.uv_cache/

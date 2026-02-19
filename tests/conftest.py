@@ -1,7 +1,6 @@
-
-import os
 import pytest
 from unittest.mock import MagicMock
+
 
 @pytest.fixture
 def mock_env(monkeypatch):
@@ -22,11 +21,12 @@ def mock_env(monkeypatch):
         "API_PAGE_LIMIT": "10",
         "RETRY_MAX_ATTEMPTS": "1",
         "RETRY_MIN_WAIT": "0",
-        "RETRY_MAX_WAIT": "1"
+        "RETRY_MAX_WAIT": "1",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
     return env_vars
+
 
 @pytest.fixture
 def mock_s3_client():

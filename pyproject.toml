@@ -63,6 +63,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+dev = [
     "boto3-stubs[s3]>=1.42.19",
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",

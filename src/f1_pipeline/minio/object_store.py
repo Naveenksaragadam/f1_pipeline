@@ -2,6 +2,7 @@
 """
 Production-grade S3/MinIO object store client with connection pooling and error handling.
 """
+
 import io
 import json
 import gzip
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class F1ObjectStore:
     """
     S3-compatible object store client optimized for MinIO.
-    
+
     Features:
     - Connection pooling for performance
     - Automatic bucket creation
@@ -31,17 +32,17 @@ class F1ObjectStore:
     """
 
     def __init__(
-        self, 
-        bucket_name: str, 
-        endpoint_url: str, 
-        access_key: str, 
+        self,
+        bucket_name: str,
+        endpoint_url: str,
+        access_key: str,
         secret_key: str,
         client: Optional[Any] = None,
-        max_pool_connections: int = 50
+        max_pool_connections: int = 50,
     ) -> None:
         """
         Initialize the ObjectStore with a bucket and an S3 client.
-        
+
         Args:
             bucket_name: Target S3 bucket name
             endpoint_url: MinIO/S3 endpoint URL
@@ -55,33 +56,33 @@ class F1ObjectStore:
         self.access_key = access_key
         self.secret_key = secret_key
         self.max_pool_connections = max_pool_connections
-        
+
         # Initialize client if not provided
         self.client = client or self._create_client()
 
     def _create_client(self) -> Any:
         """
         Create boto3 S3 client with optimized configuration.
-        
+
         Returns:
             Configured boto3 S3 client
-            
+
         Raises:
             Exception: If client creation fails
         """
         try:
             config = Config(
-                signature_version='s3v4',
+                signature_version="s3v4",
                 max_pool_connections=self.max_pool_connections,
-                retries={'max_attempts': 3, 'mode': 'standard'}
+                retries={"max_attempts": 3, "mode": "standard"},
             )
             client = boto3.client(
                 "s3",
                 endpoint_url=self.endpoint_url,
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
-                region_name=MINIO_REGION, 
-                config=config
+                region_name=MINIO_REGION,
+                config=config,
             )
             logger.info(f"✅ S3 client created (Region: {MINIO_REGION})")
             return client
@@ -92,10 +93,10 @@ class F1ObjectStore:
     def bucket_exists(self) -> bool:
         """
         Check if the configured bucket exists.
-        
+
         Returns:
             True if bucket exists, False otherwise
-            
+
         Raises:
             ClientError: On permission or configuration errors (not 404)
         """
@@ -103,8 +104,8 @@ class F1ObjectStore:
             self.client.head_bucket(Bucket=self.bucket_name)
             return True
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code in ['404', 'NoSuchBucket']:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ["404", "NoSuchBucket"]:
                 return False
             # For other errors (403 Forbidden, etc.), log and re-raise
             logger.error(f"❌ Error checking bucket {self.bucket_name}: {e}")
@@ -113,7 +114,7 @@ class F1ObjectStore:
     def create_bucket_if_not_exists(self) -> None:
         """
         Idempotently create the bucket if it doesn't exist.
-        
+
         Raises:
             ClientError: On permission or configuration errors
         """
@@ -125,18 +126,18 @@ class F1ObjectStore:
                 logger.info(f"ℹ️  Bucket '{self.bucket_name}' already exists.")
         except ClientError as e:
             logger.error(f"❌ Failed to create bucket {self.bucket_name}: {e}")
-            raise       
+            raise
 
     def delete_bucket(self, force: bool = False) -> None:
         """
         Delete the current bucket.
-        
+
         Args:
             force: If True, delete even if bucket contains objects
-            
+
         Warning:
             This is a destructive operation. Use with caution.
-            
+
         Raises:
             ClientError: On S3 errors
         """
@@ -153,46 +154,44 @@ class F1ObjectStore:
     def _empty_bucket(self) -> None:
         """
         Delete all objects in the bucket.
-        
+
         Note:
             This is a destructive operation used internally by delete_bucket.
         """
-        paginator = self.client.get_paginator('list_objects_v2')
+        paginator = self.client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket_name):
-            if 'Contents' in page:
-                objects = [{'Key': obj['Key']} for obj in page['Contents']]
+            if "Contents" in page:
+                objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
                 self.client.delete_objects(
-                    Bucket=self.bucket_name,
-                    Delete={'Objects': objects}
+                    Bucket=self.bucket_name, Delete={"Objects": objects}
                 )
                 logger.debug(f"Deleted {len(objects)} objects from {self.bucket_name}")
 
     def _serialize_body(
-        self, 
-        body: Union[Dict, List, str, bytes]
+        self, body: Union[Dict, List, str, bytes]
     ) -> Tuple[Union[str, bytes], str]:
         """
         Serialize data for S3 upload.
-        
+
         Args:
             body: Data to serialize
-            
+
         Returns:
             Tuple of (serialized_body, content_type)
         """
         if isinstance(body, (dict, list)):
-            return (json.dumps(body), 'application/json')
+            return (json.dumps(body), "application/json")
         elif isinstance(body, bytes):
-            return (body, 'application/octet-stream')
+            return (body, "application/octet-stream")
         else:
-            return (str(body), 'text/plain')
+            return (str(body), "text/plain")
 
     def put_object(
-        self, 
-        key: str, 
+        self,
+        key: str,
         body: Union[Dict, List, str, bytes, bytearray, memoryview, IO, io.BytesIO],
         metadata: Optional[Dict[str, str]] = None,
-        compress: bool = True
+        compress: bool = True,
     ) -> None:
         """
         Upload object to S3/MinIO with Gzip compression and MD5 integrity checks.
@@ -209,58 +208,58 @@ class F1ObjectStore:
         """
         # Standardize input to bytes (In-memory processing for Bronze/JSON)
         data: bytes
-        content_type = 'application/octet-stream'
-        
+        content_type = "application/octet-stream"
+
         if isinstance(body, (dict, list)):
             # Minify JSON (separators removes space) -> Encode to bytes
-            data = json.dumps(body, separators=(',', ':')).encode('utf-8')
-            content_type = 'application/json'
+            data = json.dumps(body, separators=(",", ":")).encode("utf-8")
+            content_type = "application/json"
         elif isinstance(body, str):
-            data = body.encode('utf-8')
-            content_type = 'text/plain'
+            data = body.encode("utf-8")
+            content_type = "text/plain"
         elif isinstance(body, (bytes, bytearray, memoryview)):
             data = bytes(body)
         else:
             # Handle file-like objects: Read into memory for compression/hashing
-            read_method = getattr(body, 'read', None)
+            read_method = getattr(body, "read", None)
             if callable(read_method):
                 content = read_method()
                 if isinstance(content, str):
-                    data = content.encode('utf-8')
+                    data = content.encode("utf-8")
                 elif isinstance(content, (bytes, bytearray, memoryview)):
                     data = bytes(content)
                 else:
-                    data = str(content).encode('utf-8')
+                    data = str(content).encode("utf-8")
             else:
-                data = str(body).encode('utf-8')
+                data = str(body).encode("utf-8")
 
         # Apply Gzip Compression (if requested)
         content_encoding = None
         if compress:
             # Level 9 = Maximum compression
             data = gzip.compress(data, compresslevel=9)
-            content_encoding = 'gzip'
+            content_encoding = "gzip"
 
         # Calculate MD5 Checksum (Data Integrity)
         # nosec: B303 - MD5 is used for S3/MinIO Content-MD5 integrity, not security.
-        md5_hash = hashlib.new('md5', data, usedforsecurity=False).digest()  # nosec B303
-        md5_b64 = base64.b64encode(md5_hash).decode('utf-8')
+        md5_hash = hashlib.new("md5", data, usedforsecurity=False).digest()  # nosec B303
+        md5_b64 = base64.b64encode(md5_hash).decode("utf-8")
 
         try:
             # Prepare arguments for put_object
             put_params = {
-                'Bucket': self.bucket_name,
-                'Key': key,
-                'Body': data,
-                'ContentType': content_type,
-                'ContentMD5': md5_b64,
+                "Bucket": self.bucket_name,
+                "Key": key,
+                "Body": data,
+                "ContentType": content_type,
+                "ContentMD5": md5_b64,
             }
 
             if content_encoding:
-                put_params['ContentEncoding'] = content_encoding
-            
+                put_params["ContentEncoding"] = content_encoding
+
             if metadata:
-                put_params['Metadata'] = metadata
+                put_params["Metadata"] = metadata
 
             # Upload using low-level put_object (supports ContentMD5)
             self.client.put_object(**put_params)
@@ -295,13 +294,13 @@ class F1ObjectStore:
     def object_exists(self, key: str) -> bool:
         """
         Check if an object exists in the bucket.
-        
+
         Args:
             key: S3 object key
-            
+
         Returns:
             True if object exists, False otherwise
-            
+
         Raises:
             ClientError: On permission or configuration errors (not 404)
         """
@@ -309,7 +308,7 @@ class F1ObjectStore:
             self.client.head_object(Bucket=self.bucket_name, Key=key)
             return True
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
+            error_code = e.response.get("Error", {}).get("Code", "")
             if error_code == "404":
                 return False
             # Other errors (403 Forbidden, 500) should raise
@@ -317,62 +316,60 @@ class F1ObjectStore:
             raise
 
     def list_objects(
-        self, 
-        prefix: str = "",
-        max_keys: Optional[int] = None
+        self, prefix: str = "", max_keys: Optional[int] = None
     ) -> List[str]:
         """
         List objects in bucket with optional prefix filter.
-        
+
         Args:
             prefix: Optional key prefix filter (default: "" - all objects)
             max_keys: Maximum number of keys to return
-            
+
         Returns:
             List of object keys
         """
         try:
-            paginator = self.client.get_paginator('list_objects_v2')
-            pagination_config = {'PageSize': 1000}
+            paginator = self.client.get_paginator("list_objects_v2")
+            pagination_config = {"PageSize": 1000}
             if max_keys:
-                pagination_config['MaxItems'] = max_keys
-            
+                pagination_config["MaxItems"] = max_keys
+
             pages = paginator.paginate(
-                Bucket=self.bucket_name, 
+                Bucket=self.bucket_name,
                 Prefix=prefix,
-                PaginationConfig=pagination_config
+                PaginationConfig=pagination_config,
             )
-            
+
             keys = []
             for page in pages:
-                if 'Contents' in page:
-                    keys.extend(obj['Key'] for obj in page['Contents'])
-            
+                if "Contents" in page:
+                    keys.extend(obj["Key"] for obj in page["Contents"])
+
             logger.debug(f"Listed {len(keys)} objects with prefix '{prefix}'")
             return keys
         except ClientError as e:
             logger.error(f"❌ Error listing objects with prefix '{prefix}': {e}")
             return []
-    
+
     def get_object(self, key: str) -> bytes:
         """
         Download object from S3/MinIO.
-        
+
         Args:
             key: S3 object key
-            
+
         Returns:
             Raw bytes of object content
-            
+
         Raises:
             ClientError: If object not found or access denied
         """
         try:
             response = self.client.get_object(Bucket=self.bucket_name, Key=key)
-            content = response['Body'].read()
-            
+            content = response["Body"].read()
+
             # 🔍 AUTO-DECOMPRESS: Check headers for gzip
-            if response.get('ContentEncoding') == 'gzip':
+            if response.get("ContentEncoding") == "gzip":
                 content = gzip.decompress(content)
 
             logger.debug(f"✅ Downloaded {key} ({len(content):,} bytes)")
@@ -385,19 +382,19 @@ class F1ObjectStore:
     def stream_object(self, key: str):
         """
         Stream object content to avoid loading large files into memory.
-        
+
         Args:
             key: S3 object key
-            
+
         Yields:
             File-like object (StreamingBody) of the content
-            
+
         Raises:
             ClientError: If object not found or access denied
         """
         try:
             response = self.client.get_object(Bucket=self.bucket_name, Key=key)
-            yield response['Body']
+            yield response["Body"]
         except ClientError as e:
             logger.error(f"❌ Failed to stream {key}: {e}")
             raise
@@ -405,20 +402,20 @@ class F1ObjectStore:
     def get_json(self, key: str) -> Dict[str, Any]:
         """
         Download and parse JSON object.
-        
+
         Args:
             key: S3 object key
-            
+
         Returns:
             Parsed JSON as dictionary
-            
+
         Raises:
             ClientError: If object not found
             json.JSONDecodeError: If content is not valid JSON
         """
         try:
             content = self.get_object(key)
-            data = json.loads(content.decode('utf-8'))
+            data = json.loads(content.decode("utf-8"))
             logger.debug(f"✅ Parsed JSON from {key}")
             return data
         except json.JSONDecodeError as e:
@@ -428,10 +425,10 @@ class F1ObjectStore:
     def delete_object(self, key: str) -> None:
         """
         Delete an object from the bucket.
-        
+
         Args:
             key: S3 object key
-            
+
         Raises:
             ClientError: On S3 errors
         """
@@ -441,28 +438,28 @@ class F1ObjectStore:
         except ClientError as e:
             logger.error(f"❌ Failed to delete {key}: {e}")
             raise
-    
+
     def get_object_metadata(self, key: str) -> Dict[str, Any]:
         """
         Get object metadata without downloading the object.
-        
+
         Args:
             key: S3 object key
-            
+
         Returns:
             Dictionary containing object metadata
-            
+
         Raises:
             ClientError: If object not found
         """
         try:
             response = self.client.head_object(Bucket=self.bucket_name, Key=key)
             metadata = {
-                'size': response.get('ContentLength', 0),
-                'last_modified': response.get('LastModified'),
-                'content_type': response.get('ContentType'),
-                'etag': response.get('ETag'),
-                'metadata': response.get('Metadata', {})
+                "size": response.get("ContentLength", 0),
+                "last_modified": response.get("LastModified"),
+                "content_type": response.get("ContentType"),
+                "etag": response.get("ETag"),
+                "metadata": response.get("Metadata", {}),
             }
             return metadata
         except ClientError as e:
