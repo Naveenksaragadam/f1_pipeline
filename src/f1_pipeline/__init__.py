@@ -8,8 +8,4 @@ from .config import validate_configuration
 
 __version__ = "0.1.0"
 
-__all__ = [
-    "F1DataIngestor",
-    "F1ObjectStore", 
-    "validate_configuration"
-]
+__all__ = ["F1DataIngestor", "F1ObjectStore", "validate_configuration"]

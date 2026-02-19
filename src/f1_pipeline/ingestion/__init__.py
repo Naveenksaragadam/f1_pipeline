@@ -1,4 +1,4 @@
-#src/f1_pipeline/ingestion/__init__.py
+# src/f1_pipeline/ingestion/__init__.py
 """
 F1 Data Ingestion Module
 
@@ -10,9 +10,10 @@ Main Components:
 - HTTP client: Session management with automatic retries
 - Configuration: Environment-based settings with validation
 """
+
 import logging
 from .ingestor import F1DataIngestor
 
 logger = logging.getLogger(__name__)
 
-__all__ = ['F1DataIngestor']
+__all__ = ["F1DataIngestor"]

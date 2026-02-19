@@ -5,11 +5,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from requests_ratelimiter import LimiterSession
 from ..config import (
-    DEFAULT_HEADERS, 
-    API_RATE_PER_SEC, 
-    API_RATE_PER_MIN, 
+    DEFAULT_HEADERS,
+    API_RATE_PER_SEC,
+    API_RATE_PER_MIN,
     API_BURST,
-    RETRY_MAX_ATTEMPTS
+    RETRY_MAX_ATTEMPTS,
 )
 
 
@@ -22,9 +22,7 @@ def create_session() -> requests.Session:
     # 1. Rate Limiter (Throttles outgoing requests)
     # Note: Uses memory backend by default, so it resets on script restart.
     session = LimiterSession(
-        per_second=API_RATE_PER_SEC, 
-        per_minute=API_RATE_PER_MIN, 
-        burst=API_BURST
+        per_second=API_RATE_PER_SEC, per_minute=API_RATE_PER_MIN, burst=API_BURST
     )
 
     # 2. Retry Strategy (Handles 429s gracefully)

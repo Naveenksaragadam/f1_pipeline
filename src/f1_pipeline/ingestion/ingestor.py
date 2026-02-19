@@ -11,9 +11,10 @@ Key Improvements:
 - Enhanced performance tracking with phase timings
 - Support for concurrent pagination (max_workers)
 """
+
 import logging
 from requests import RequestException
-from typing import Dict, Any, Optional, Set, Tuple, List
+from typing import Dict, Any, Optional, Set, Tuple
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from tenacity import (
@@ -57,7 +58,7 @@ RETRY_STRATEGY = retry(
 class F1DataIngestor:
     """
     Production-grade data ingestor for F1 Ergast API.
-    
+
     Features:
     - Idempotent writes (skip existing files by default)
     - Force refresh for current season data
@@ -69,14 +70,11 @@ class F1DataIngestor:
     """
 
     def __init__(
-        self, 
-        base_url: str = BASE_URL, 
-        session=None,
-        validate_connection: bool = True
+        self, base_url: str = BASE_URL, session=None, validate_connection: bool = True
     ) -> None:
         """
         Initialize the ingestor with HTTP session and object store.
-        
+
         Args:
             base_url: API base URL
             session: Optional pre-configured requests session
@@ -103,7 +101,7 @@ class F1DataIngestor:
     def _validate_infrastructure(self) -> None:
         """
         Validate that MinIO is accessible and bucket exists.
-        
+
         Raises:
             RuntimeError: If MinIO connection or bucket creation fails
         """
@@ -116,7 +114,7 @@ class F1DataIngestor:
             raise RuntimeError(
                 "Cannot connect to MinIO. Ensure docker-compose services are running."
             ) from e
-    
+
     def _reset_stats(self) -> None:
         """Reset statistics counters to initial state."""
         self.stats = {
@@ -164,29 +162,30 @@ class F1DataIngestor:
         """
         # Build prefix for listing
         prefix_parts = ["ergast", f"endpoint={endpoint}"]
-        
+
         if season:
             prefix_parts.append(f"season={season}")
         if round_num:
             prefix_parts.append(f"round={int(round_num):02d}")
-        
+
         prefix_parts.append(f"batch_id={batch_id}")
         prefix = "/".join(prefix_parts) + "/"
-        
+
         # List all objects with this prefix
         try:
             existing_keys = self.store.list_objects(prefix=prefix)
-            logger.debug(f"Found {len(existing_keys)} existing files for prefix: {prefix}")
+            logger.debug(
+                f"Found {len(existing_keys)} existing files for prefix: {prefix}"
+            )
             return set(existing_keys)
         except Exception as e:
-            logger.warning(f"Failed to list existing objects: {e}. Will check individually.")
+            logger.warning(
+                f"Failed to list existing objects: {e}. Will check individually."
+            )
             return set()
 
     def _save_to_minio(
-        self, 
-        data: Dict[str, Any], 
-        path: str, 
-        metadata: Dict[str, Any]
+        self, data: Dict[str, Any], path: str, metadata: Dict[str, Any]
     ) -> None:
         """
         Save data to MinIO with metadata envelope.
@@ -210,19 +209,14 @@ class F1DataIngestor:
             self.store.put_object(path, envelope, metadata=s3_metadata)
             self.stats["files_written"] += 1
             if self.stats["files_written"] % 10 == 0:
-                 logger.debug(f"Snapshot: {self.stats}")
+                logger.debug(f"Snapshot: {self.stats}")
         except Exception as e:
             self.stats["errors_encountered"] += 1
             logger.error(f"❌ Failed to save {path}: {e}")
             raise
 
     @RETRY_STRATEGY
-    def fetch_page(
-        self, 
-        url: str, 
-        limit: int, 
-        offset: int
-    ) -> Dict[str, Any]:
+    def fetch_page(self, url: str, limit: int, offset: int) -> Dict[str, Any]:
         """
         Fetch a single page from the API with automatic retries.
         """
@@ -232,10 +226,10 @@ class F1DataIngestor:
             # logger.debug(f"📡 GET {url} | limit={limit} offset={offset}")
             response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
-            
+
             self.stats["api_calls_made"] += 1
             data = response.json()
-            
+
             return data
 
         except RequestException as e:
@@ -259,7 +253,7 @@ class F1DataIngestor:
         limit: int,
         offset: int,
         force_refresh: bool,
-        existing_keys: Optional[Set[str]] = None
+        existing_keys: Optional[Set[str]] = None,
     ) -> Tuple[bool, int]:
         """Fetch and save a single page (used for concurrent processing)."""
         try:
@@ -270,7 +264,7 @@ class F1DataIngestor:
             if not force_refresh:
                 # Check provided batch set or fallback to individual check
                 if existing_keys is not None:
-                     if s3_key in existing_keys:
+                    if s3_key in existing_keys:
                         self.stats["files_skipped"] += 1
                         return (True, 0)
                 elif self.store.object_exists(s3_key):
@@ -298,7 +292,9 @@ class F1DataIngestor:
             return (True, total_records)
 
         except Exception as e:
-            logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
+            logger.error(
+                f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True
+            )
             self.stats["errors_encountered"] += 1
             return (False, 0)
 
@@ -330,7 +326,6 @@ class F1DataIngestor:
         # Pagination setup
         limit = DEFAULT_LIMIT
         is_paginated = config.get("pagination", True)
-        refresh_mode = "FORCE_REFRESH" if force_refresh else "IDEMPOTENT"
 
         logger.info(
             f"🚀 Starting: {endpoint_name:20s} | "
@@ -341,14 +336,21 @@ class F1DataIngestor:
         # STEP 1: Always fetch first page to determine total records
         try:
             first_page_success, total_records = self._fetch_and_save_page(
-                endpoint_name, batch_id, full_url, season, round_num,
-                page=1, limit=limit, offset=0, force_refresh=force_refresh
+                endpoint_name,
+                batch_id,
+                full_url,
+                season,
+                round_num,
+                page=1,
+                limit=limit,
+                offset=0,
+                force_refresh=force_refresh,
             )
             if not first_page_success:
                 raise Exception(f"Failed to fetch first page of {endpoint_name}")
         except Exception as e:
-             logger.error(f"❌ Failed to init ingestion for {endpoint_name}: {e}")
-             raise
+            logger.error(f"❌ Failed to init ingestion for {endpoint_name}: {e}")
+            raise
 
         # STEP 2: Calculate total pages
         if not is_paginated or total_records == 0:
@@ -365,26 +367,36 @@ class F1DataIngestor:
 
         # STEP 3: Fetch remaining pages
         remaining_pages = list(range(2, total_pages + 1))
-        
+
         if max_workers > 1 and len(remaining_pages) >= 2:
-             existing_keys = set()
-             if not force_refresh:
+            existing_keys = set()
+            if not force_refresh:
                 existing_keys = self._get_existing_keys(
                     endpoint_name, batch_id, season, round_num
                 )
-             
-             logger.info(f"Fetching {len(remaining_pages)} pages concurrently (workers={max_workers})")
-             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
+            logger.info(
+                f"Fetching {len(remaining_pages)} pages concurrently (workers={max_workers})"
+            )
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
                 for page in remaining_pages:
                     offset = (page - 1) * limit
                     future = executor.submit(
                         self._fetch_and_save_page,
-                        endpoint_name, batch_id, full_url, season, round_num,
-                        page, limit, offset, force_refresh, existing_keys
+                        endpoint_name,
+                        batch_id,
+                        full_url,
+                        season,
+                        round_num,
+                        page,
+                        limit,
+                        offset,
+                        force_refresh,
+                        existing_keys,
                     )
                     futures.append((page, future))
-                
+
                 # Check results
                 for page, future in futures:
                     try:
@@ -410,30 +422,37 @@ class F1DataIngestor:
                 if not force_refresh and s3_key in existing_keys:
                     self.stats["files_skipped"] += 1
                     continue
-                
+
                 self._fetch_and_save_page(
-                    endpoint_name, batch_id, full_url, season, round_num,
-                    page, limit, offset, force_refresh
+                    endpoint_name,
+                    batch_id,
+                    full_url,
+                    season,
+                    round_num,
+                    page,
+                    limit,
+                    offset,
+                    force_refresh,
                 )
 
         logger.info(f"✅ Completed {endpoint_name}")
 
     def run_full_extraction(
-        self, 
-        season: int, 
-        batch_id: str, 
+        self,
+        season: int,
+        batch_id: str,
         force_refresh: bool = False,
-        concurrency_enabled: bool = True
+        concurrency_enabled: bool = True,
     ) -> Dict[str, Any]:
         """
         Orchestrate full season extraction following dependency graph.
-        
+
         Args:
             season: F1 season year (e.g., 2024)
             batch_id: Unique batch identifier
             force_refresh: If True, re-fetch all data
             concurrency_enabled: Enable threading for paginated endpoints
-            
+
         Returns:
             Dictionary containing extraction statistics
         """
@@ -457,35 +476,41 @@ class F1DataIngestor:
             # ============================================================
             phase_start = datetime.now()
             logger.info("\n--- Phase 1: Reference Data ---")
-            
+
             for endpoint in ["seasons", "circuits", "status"]:
                 self.ingest_endpoint(
                     endpoint,
                     batch_id,
                     season=(season if endpoint == "circuits" else None),
                     force_refresh=force_refresh,
-                    max_workers=1
+                    max_workers=1,
                 )
-            
-            phase_timings['reference_data'] = (datetime.now() - phase_start).total_seconds()
-            logger.info(f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n")
-            
+
+            phase_timings["reference_data"] = (
+                datetime.now() - phase_start
+            ).total_seconds()
+            logger.info(
+                f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n"
+            )
+
             # ============================================================
             # PHASE 2: Season-Level Data
             # ============================================================
             phase_start = datetime.now()
             logger.info("--- Phase 2: Season-Level Data ---")
-            
+
             for endpoint in ["constructors", "drivers", "races"]:
                 self.ingest_endpoint(
-                    endpoint, 
-                    batch_id, 
-                    season=season, 
+                    endpoint,
+                    batch_id,
+                    season=season,
                     force_refresh=force_refresh,
-                    max_workers=MAX_WORKERS
+                    max_workers=MAX_WORKERS,
                 )
-            
-            phase_timings['season_data'] = (datetime.now() - phase_start).total_seconds()
+
+            phase_timings["season_data"] = (
+                datetime.now() - phase_start
+            ).total_seconds()
             logger.info(f"✅ Phase 2 Complete: {phase_timings['season_data']:.2f}s\n")
 
             # ============================================================
@@ -493,9 +518,9 @@ class F1DataIngestor:
             # ============================================================
             phase_start = datetime.now()
             logger.info("--- Phase 3: Race Calendar Parsing ---")
-            
+
             races_key = f"ergast/endpoint=races/season={season}/batch_id={batch_id}/page_001.json"
-            
+
             try:
                 logger.info(f"📖 Reading race calendar from Bronze: {races_key}")
                 races_envelope = self.store.get_json(races_key)
@@ -507,13 +532,21 @@ class F1DataIngestor:
                     f"   Falling back to API fetch..."
                 )
                 schedule_url = f"{self.base_url}/{season}.json"
-                schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
-                races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
+                schedule_data = self.fetch_page(
+                    schedule_url, limit=DEFAULT_LIMIT, offset=0
+                )
+                races_list = (
+                    schedule_data.get("MRData", {})
+                    .get("RaceTable", {})
+                    .get("Races", [])
+                )
 
             total_rounds = len(races_list)
             logger.info(f"📅 Found {total_rounds} rounds for season {season}")
-            
-            phase_timings['calendar_parse'] = (datetime.now() - phase_start).total_seconds()
+
+            phase_timings["calendar_parse"] = (
+                datetime.now() - phase_start
+            ).total_seconds()
 
             if total_rounds == 0:
                 logger.warning(f"⚠️  No races found for season {season}")
@@ -527,14 +560,14 @@ class F1DataIngestor:
                 f"--- Phase 4: Race-Level Data ({total_rounds} rounds) ---\n"
                 f"{'=' * 70}"
             )
-            
+
             race_phase_start = datetime.now()
-            
+
             for idx, race in enumerate(races_list, 1):
                 round_num = int(race["round"])
                 race_name = race.get("raceName", "Unknown")
                 round_start = datetime.now()
-                
+
                 logger.info(
                     f"\n{'─' * 70}\n"
                     f"[{idx}/{total_rounds}] Round {round_num}: {race_name}\n"
@@ -553,9 +586,9 @@ class F1DataIngestor:
                         season=season,
                         round_num=round_num,
                         force_refresh=force_refresh,
-                        max_workers=MAX_WORKERS 
+                        max_workers=MAX_WORKERS,
                     )
-                
+
                 for endpoint in ["driverstandings", "constructorstandings"]:
                     self.ingest_endpoint(
                         endpoint,
@@ -563,28 +596,30 @@ class F1DataIngestor:
                         season=season,
                         round_num=round_num,
                         force_refresh=force_refresh,
-                        max_workers=1
+                        max_workers=1,
                     )
-                
+
                 round_duration = (datetime.now() - round_start).total_seconds()
                 logger.info(
                     f"{'─' * 70}\n"
                     f"✅ Round {round_num} Complete: {round_duration:.2f}s "
-                    f"({round_duration/60:.1f}m)\n"
+                    f"({round_duration / 60:.1f}m)\n"
                     f"{'─' * 70}"
                 )
-            
-            phase_timings['race_data'] = (datetime.now() - race_phase_start).total_seconds()
-            
+
+            phase_timings["race_data"] = (
+                datetime.now() - race_phase_start
+            ).total_seconds()
+
             return self._generate_summary(extraction_start, phase_timings)
-        
+
         except Exception as e:
             logger.error(f"\n❌ Extraction FAILED for season {season}: {e}")
             summary = self._generate_summary(extraction_start, phase_timings)
             summary["status"] = "FAILED"
             summary["error_message"] = str(e)
             raise
-        
+
     def _generate_summary(
         self,
         start_time: datetime,
@@ -594,35 +629,35 @@ class F1DataIngestor:
         Generate extraction summary with statistics.
         """
         duration = (datetime.now() - start_time).total_seconds()
-        
+
         summary = {
             "status": "SUCCESS" if self.stats["errors_encountered"] == 0 else "PARTIAL",
             "duration_seconds": round(duration, 2),
             "duration_minutes": round(duration / 60, 2),
-            **self.stats
+            **self.stats,
         }
-        
+
         if phase_timings:
             summary["phase_timings"] = {
                 k: round(v, 2) for k, v in phase_timings.items()
             }
-        
+
         logger.info(
             f"\n{'=' * 70}\n"
             f"✅ Extraction Complete\n"
             f"   Status: {summary['status']}\n"
-            f"   Duration: {duration:.2f}s ({duration/60:.1f}m)\n"
+            f"   Duration: {duration:.2f}s ({duration / 60:.1f}m)\n"
             f"   Files Written: {self.stats['files_written']}\n"
             f"   Files Skipped: {self.stats['files_skipped']}\n"
             f"   API Calls: {self.stats['api_calls_made']}\n"
             f"   Errors: {self.stats['errors_encountered']}\n"
         )
-        
+
         if phase_timings:
             logger.info("   Phase Breakdown:")
             for phase, timing in phase_timings.items():
-                logger.info(f"     - {phase}: {timing:.2f}s ({timing/60:.1f}m)")
-        
+                logger.info(f"     - {phase}: {timing:.2f}s ({timing / 60:.1f}m)")
+
         logger.info(f"{'=' * 70}\n")
-        
+
         return summary

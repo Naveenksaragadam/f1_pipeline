@@ -3,14 +3,14 @@
 F1 Data Ingestion DAG - Production Configuration
 Orchestrates yearly extraction with automatic force_refresh for current season.
 """
+
 import logging
 import pendulum
-from airflow import DAG # type: ignore
-from airflow.operators.python import PythonOperator # type: ignore
-from airflow.exceptions import AirflowException # type: ignore
+from airflow import DAG  # type: ignore
+from airflow.operators.python import PythonOperator  # type: ignore
+from airflow.exceptions import AirflowException  # type: ignore
 
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
-from f1_pipeline.config import ENDPOINT_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 def run_ingestion(**kwargs) -> None:
     """
     Orchestrate F1 data ingestion with intelligent refresh strategy.
-    
+
     Strategy:
     - Historical seasons (< current year): Idempotent (skip existing files)
     - Current season: Force refresh (data may change due to penalties)
-    
+
     Args:
         **kwargs: Airflow context parameters
-        
+
     Raises:
         AirflowException: On ingestion failures
     """
@@ -34,13 +34,13 @@ def run_ingestion(**kwargs) -> None:
         logical_date = kwargs["logical_date"]
         batch_id = kwargs["ts_nodash"]
         season_year = logical_date.year
-    
+
         # Determine refresh strategy
         # Current season data may change (penalties, new races)
         # Historical data is stable and can be safely skipped
         current_year = pendulum.now().year
-        should_force_refresh = (season_year == current_year)
-        
+        should_force_refresh = season_year == current_year
+
         # Refresh mode for logging
         refresh_mode = "FORCE_REFRESH" if should_force_refresh else "IDEMPOTENT"
 
@@ -57,14 +57,12 @@ def run_ingestion(**kwargs) -> None:
 
         # Initialize ingestor with connection validation
         ingestor = F1DataIngestor(validate_connection=True)
-    
+
         # Run full extraction
         summary = ingestor.run_full_extraction(
-            season=season_year,
-            batch_id=batch_id,
-            force_refresh=should_force_refresh
+            season=season_year, batch_id=batch_id, force_refresh=should_force_refresh
         )
-        
+
         # Log summary
         logger.info(
             f"\n{'=' * 70}\n"
@@ -79,15 +77,15 @@ def run_ingestion(**kwargs) -> None:
         )
 
         # Push stats to XCom for downstream tasks
-        kwargs['ti'].xcom_push(key='ingestion_stats', value=summary)
-        
+        kwargs["ti"].xcom_push(key="ingestion_stats", value=summary)
+
         # Fail the task if there were errors
-        if summary['errors_encountered'] > 0:
+        if summary["errors_encountered"] > 0:
             raise AirflowException(
                 f"Ingestion completed with {summary['errors_encountered']} errors. "
                 "Check logs for details."
             )
-            
+
     except Exception as e:
         logger.error(f"❌ Ingestion failed: {e}", exc_info=True)
         raise AirflowException(f"F1 Ingestion failed: {e}") from e
@@ -95,19 +93,19 @@ def run_ingestion(**kwargs) -> None:
 
 # DAG Configuration
 default_args = {
-    'owner': 'data-engineering',
-    'depends_on_past': False,
-    'email_on_failure': True,
-    'email_on_retry': False,
-    'retries': 1,
-    'retry_delay': pendulum.duration(minutes=5),
+    "owner": "data-engineering",
+    "depends_on_past": False,
+    "email_on_failure": True,
+    "email_on_retry": False,
+    "retries": 1,
+    "retry_delay": pendulum.duration(minutes=5),
 }
 
 with DAG(
     dag_id="f1_pipeline",
     description="Extract F1 data from Jolpica API to Bronze layer (MinIO)",
     default_args=default_args,
-    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"), 
+    start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
     schedule_interval="@yearly",
     catchup=True,
     max_active_runs=1,  # Sequential execution prevents API rate limits
@@ -140,7 +138,6 @@ with DAG(
     - Detailed error logging with stack traces
     """,
 ) as dag:
-    
     ingest_task = PythonOperator(
         task_id="extract_season_data",
         python_callable=run_ingestion,
