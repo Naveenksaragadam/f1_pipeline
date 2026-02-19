@@ -59,3 +59,10 @@ f1_dbt/.user.yml
 # Snyk Security Extension - AI Rules (auto-generated)
 .agent/rules/snyk_rules.md
 .uv_cache/
+
+# Stop tracking example models and other files
+f1_dbt/models/bronze/test.sql
+f1_dbt/models/example/
+
+# Stop tracking concurrent_backfill.py
+src/f1_pipeline/backfill/concurrent_backfill.py
