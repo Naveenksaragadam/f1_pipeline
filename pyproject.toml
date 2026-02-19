@@ -67,9 +67,40 @@ dev = [
     "boto3-stubs[s3]>=1.42.19",
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
+    "pytest-cov",
     "ruff>=0.3.0",
     "mypy>=1.0.0",
+    "types-requests",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/f1_pipeline"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+exclude = ['venv', '.venv']
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = ["E501"] # Line too long (handled by format)
+
+[tool.ruff.lint.isort]
+known-first-party = ["f1_pipeline"]

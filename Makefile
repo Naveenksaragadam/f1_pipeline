@@ -1,7 +1,7 @@
 .PHONY: help install-dev format lint test clean docker-up docker-down requirements
 
 # Use local uv cache to avoid system permission issues
-export UV_CACHE_DIR := $(PWD)/.uv_cache
+export UV_CACHE_DIR := $(PWD)/.uv_cache_fix
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -18,13 +18,11 @@ lint: ## Run linters (ruff)
 	@echo "Running ruff check..."
 	uv run ruff check src tests dags --fix
 
-test: ## Run tests (pytest)
-	@echo "Running tests..."
-	uv run pytest tests/ -v
+check: format lint type-check ## Run all checks (format, lint, type-check)
 
 type-check: ## Run type checking (mypy)
 	@echo "Running mypy..."
-	uv run mypy src tests
+	uv run mypy src tests dags
 
 test-cov: ## Run tests with coverage
 	@echo "Running tests with coverage..."

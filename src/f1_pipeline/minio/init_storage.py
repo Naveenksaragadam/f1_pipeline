@@ -1,22 +1,22 @@
 # src/f1_pipeline/scripts/init_storage.py
 import logging
-from f1_pipeline.minio.object_store import F1ObjectStore
+
 from f1_pipeline.config import (
-    MINIO_BUCKET_BRONZE,
-    MINIO_BUCKET_SILVER,
-    MINIO_BUCKET_GOLD,
-    MINIO_ENDPOINT,
     MINIO_ACCESS_KEY,
+    MINIO_BUCKET_BRONZE,
+    MINIO_BUCKET_GOLD,
+    MINIO_BUCKET_SILVER,
+    MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
 )
-
+from f1_pipeline.minio.object_store import F1ObjectStore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def initialize_buckets():
+def initialize_buckets() -> None:
     """
     Idempotent initialization of all required buckets.
     """
