@@ -181,7 +181,8 @@ make install-dev
 source .venv/bin/activate
 ```
 
-_(Note: Review `.env.example` to see the full list of configurable limits and endpoints. The defaults work securely out of the box for local development)._
+_(Note: Review `.env.example` to see the full list of configurable limits and
+endpoints. The defaults work securely out of the box for local development)._
 
 ### 3. Start Services
 
