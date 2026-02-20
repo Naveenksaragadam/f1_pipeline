@@ -51,8 +51,8 @@ def test_create_client_failure() -> None:
             _ = F1ObjectStore(
                 bucket_name="test",
                 endpoint_url="http://url",
-                access_key="key",
-                secret_key="secret",
+                access_key="mock_access_key",
+                secret_key="mock_secret_key",
             )
 
 
