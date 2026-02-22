@@ -12,7 +12,13 @@ import pendulum
 from airflow import DAG  # type: ignore
 from airflow.exceptions import AirflowException  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
-from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig, RenderConfig
+from cosmos import (  # type: ignore
+    DbtTaskGroup,
+    ExecutionConfig,
+    ProfileConfig,
+    ProjectConfig,
+    RenderConfig,
+)
 
 from f1_pipeline.config import (
     MINIO_ACCESS_KEY,
@@ -169,7 +175,7 @@ with DAG(
     This DAG manages the full transformation lifecycle for Formula 1 data.
 
     ## Architecture
-    1. **Bronze Layer (`extract_season_data`)**: Retrieves raw JSON from the Ergast API and stores it in MinIO. 
+    1. **Bronze Layer (`extract_season_data`)**: Retrieves raw JSON from the Ergast API and stores it in MinIO.
        - Uses a `FORCE_REFRESH` policy for the current season.
     2. **Silver Layer (`transform_season_data`)**: Processes raw JSON into cleaned, flattened Parquet files.
        - Uses `Pydantic` for schema enforcement.

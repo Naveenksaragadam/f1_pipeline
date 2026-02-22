@@ -4,7 +4,6 @@ Registers and retrieves schemas for various F1 API endpoints.
 Provides a central mapping to decouple endpoint names from their technical schemas.
 """
 
-
 from f1_pipeline.transform.schemas import (
     CircuitSchema,
     ConstructorSchema,
