@@ -156,22 +156,57 @@ def test_ingest_endpoint_invalid_config(ingestor: F1DataIngestor) -> None:
 def test_silent_data_corruption_exception(
     ingestor: F1DataIngestor, mock_session: MagicMock
 ) -> None:
-    """Test ValueError is caught internally when API reports total > 0 but payload array is empty."""
-    # API claims 100 records but provides no actual items
+    """Test that DataCorruptionError propagates from _fetch_and_save_page.
+
+    Data corruption (API claims records exist but payload is empty) is unrecoverable
+    and must NOT be swallowed by the broad except-and-count path.
+    """
+    from f1_pipeline.exceptions import DataCorruptionError
+
+    # API claims 100 records but provides no non-empty list in the payload
     mock_session.get.return_value.json.return_value = {
         "MRData": {"total": "100", "RaceTable": {"Races": []}}
     }
 
-    # We need to bypass the fetch_page retry logic for a clean test so we call _fetch_and_save
-    # _fetch_and_save_page catches all exceptions and logs them
-    success, count = ingestor._fetch_and_save_page(
-        "races", "b1", "url", 2024, None, 1, 10, 0, False
-    )
+    # DataCorruptionError must propagate — not be swallowed
+    with pytest.raises(DataCorruptionError, match="Silent Data Corruption"):
+        ingestor._fetch_and_save_page("races", "b1", "url", 2024, None, 1, 10, 0, False)
 
-    # It should fail and return (False, 0)
-    assert not success
-    assert count == 0
-    assert ingestor.stats["errors_encountered"] == 1
+    # Must NOT be counted as a skippable error
+    assert ingestor.stats["errors_encountered"] == 0
+
+
+def test_data_corruption_propagates_through_ingest_endpoint(
+    ingestor: F1DataIngestor, mock_session: MagicMock
+) -> None:
+    """Test that DataCorruptionError halts ingest_endpoint entirely."""
+    from f1_pipeline.exceptions import DataCorruptionError
+
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "100", "DriverTable": {"Drivers": []}}
+    }
+
+    with pytest.raises(DataCorruptionError):
+        ingestor.ingest_endpoint("drivers", "b1", season=2024)
+
+
+def test_check_for_items_depth_guard(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
+    """Test that traversal beyond depth 20 is treated as 'no items found'.
+
+    This prevents pathological recursion from deeply nested or adversarial input.
+    """
+    from f1_pipeline.exceptions import DataCorruptionError
+
+    # Build a 25-level-deep dict with real data buried beyond the depth limit
+    deeply_nested: dict = {"real_data": ["item"]}
+    for _ in range(25):
+        deeply_nested = {"wrapper": deeply_nested}
+
+    mock_session.get.return_value.json.return_value = {"MRData": {"total": "1", **deeply_nested}}
+
+    # The depth guard returns False, which triggers DataCorruptionError
+    with pytest.raises(DataCorruptionError, match="Silent Data Corruption"):
+        ingestor._fetch_and_save_page("seasons", "b1", "url", None, None, 1, 10, 0, False)
 
 
 def test_ingest_endpoint_first_page_fail(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:

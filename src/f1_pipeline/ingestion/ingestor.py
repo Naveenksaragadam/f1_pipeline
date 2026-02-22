@@ -42,6 +42,7 @@ from ..config import (
     RETRY_MAX_WAIT,
     RETRY_MIN_WAIT,
 )
+from ..exceptions import DataCorruptionError
 
 # Internal Imports
 from .http_client import create_session
@@ -285,24 +286,32 @@ class F1DataIngestor:
 
             # Data Quality Layer: Catch silent API failures (e.g. total > 0 but empty payload)
             if total_records > 0:
-                # Ergast wraps data in MRData -> [Endpoint]Table -> [Item]s
-                # We do a basic check: if we can find any list that has items, it's valid.
-                # If ALL lists in the JSON are empty, but total > 0, it's corrupt.
-                def check_for_items(obj: Any) -> bool:
+                # Ergast wraps data in MRData -> [Endpoint]Table -> [Item]s.
+                # If the API claims total > 0 but returns no list items, the response is corrupt.
+                def check_for_items(obj: Any, _depth: int = 0) -> bool:
+                    """Recursively check whether obj contains any non-empty list."""
+                    if _depth > 20:
+                        # Guard against pathological nesting / adversarial input.
+                        return False
                     if isinstance(obj, list) and len(obj) > 0:
                         return True
                     if isinstance(obj, dict):
-                        return any(check_for_items(v) for v in obj.values())
+                        return any(check_for_items(v, _depth + 1) for v in obj.values())
                     return False
 
                 if not check_for_items(mr_data):
-                    raise ValueError(
-                        f"Silent Data Corruption: API reported total={total_records} but returned empty data payload."
+                    raise DataCorruptionError(
+                        f"Silent Data Corruption: API reported total={total_records} "
+                        f"but returned an empty data payload for '{endpoint_name}' page {page}."
                     )
 
             self._save_to_minio(response_data, s3_key, metadata)
             return (True, total_records)
 
+        except DataCorruptionError:
+            # Data corruption is unrecoverable — do not count as a skippable error.
+            # Let it propagate to halt the run and surface the underlying API bug.
+            raise
         except Exception as e:
             logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
             self.stats["errors_encountered"] += 1
@@ -319,6 +328,13 @@ class F1DataIngestor:
     ) -> None:
         """
         Ingest data from a specific API endpoint with pagination support and optional concurrency.
+
+        Stats lifecycle note:
+            Results are accumulated into ``self.stats``, which is shared across calls.
+            ``_reset_stats()`` is NOT called here — it is the responsibility of the caller
+            (i.e. ``run_full_extraction``) to reset before starting a new extraction run.
+            If calling ``ingest_endpoint`` directly, reset manually with ``_reset_stats()``
+            if you need isolated counters.
         """
         # Validate endpoint config exists
         config = ENDPOINT_CONFIG.get(endpoint_name)
@@ -523,9 +539,12 @@ class F1DataIngestor:
                 races_list = races_envelope["data"]["MRData"]["RaceTable"]["Races"]
                 logger.info("✅ Successfully read race calendar from Bronze")
             except Exception as e:
-                logger.warning(
-                    f"⚠️  Failed to read race calendar from Bronze: {e}\n"
-                    f"   Falling back to API fetch..."
+                # Invariant: Phase 2 already ingested races successfully (or would have raised),
+                # so the data IS in Bronze. A read failure here is a transient MinIO issue.
+                # We fall back to a direct API call to unblock Phase 4, but this is unexpected.
+                logger.error(
+                    f"❌ Failed to read race calendar from Bronze (unexpected — data should exist): {e}\n"
+                    f"   Falling back to direct API call to unblock Phase 4..."
                 )
                 schedule_url = f"{self.base_url}/{season}.json"
                 schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
