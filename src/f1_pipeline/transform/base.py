@@ -194,7 +194,7 @@ class F1Transformer:
             # Find any columns that are lists (e.g., 'timings' in Laps, 'constructors' in Standings)
             list_cols = [
                 name
-                for name, dtype in zip(curr_df.columns, curr_df.dtypes)
+                for name, dtype in zip(curr_df.columns, curr_df.dtypes, strict=True)
                 if isinstance(dtype, pl.List)
             ]
 
@@ -209,7 +209,7 @@ class F1Transformer:
             # 2. Handle Struct Unnesting
             struct_cols = [
                 name
-                for name, dtype in zip(curr_df.columns, curr_df.dtypes)
+                for name, dtype in zip(curr_df.columns, curr_df.dtypes, strict=True)
                 if isinstance(dtype, pl.Struct)
             ]
 
@@ -219,9 +219,11 @@ class F1Transformer:
             for col in struct_cols:
                 # Add prefix to the nested fields to avoid collisions
                 dtype = curr_df.schema[col]
-                new_field_names = [f"{col}_{f.name}" for f in dtype.fields]
-
-                curr_df = curr_df.with_columns(pl.col(col).struct.rename_fields(new_field_names))
+                if isinstance(dtype, pl.Struct):
+                    new_field_names = [f"{col}_{f.name}" for f in dtype.fields]
+                    curr_df = curr_df.with_columns(
+                        pl.col(col).struct.rename_fields(new_field_names)
+                    )
 
             curr_df = curr_df.unnest(struct_cols)
 

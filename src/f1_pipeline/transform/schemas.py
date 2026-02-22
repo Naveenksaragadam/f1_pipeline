@@ -73,9 +73,7 @@ class DriverSchema(F1BaseModel):
     permanent_number: int | None = Field(
         None, alias="permanentNumber", description="Official racing number"
     )
-    code: str | None = Field(
-        None, alias="code", description="Three-letter shorthand (e.g., 'VER')"
-    )
+    code: str | None = Field(None, alias="code", description="Three-letter shorthand (e.g., 'VER')")
     given_name: str = Field(alias="givenName", description="Driver's first/given name")
     family_name: str = Field(alias="familyName", description="Driver's last/family name")
     date_of_birth: str = Field(alias="dateOfBirth", description="Birth date in YYYY-MM-DD format")
@@ -142,9 +140,7 @@ class ResultSchema(F1BaseModel):
     driver: DriverSchema = Field(alias="Driver", description="Nested driver profile")
     constructor: ConstructorSchema = Field(alias="Constructor", description="Nested team profile")
     status: str = Field(description="Finishing status (e.g., 'Finished', '+1 Lap', 'Engine')")
-    time: TimeSchema | None = Field(
-        None, alias="Time", description="Total race time for finishers"
-    )
+    time: TimeSchema | None = Field(None, alias="Time", description="Total race time for finishers")
     fastest_lap: FastestLapSchema | None = Field(
         None, alias="FastestLap", description="Details for the fastest lap, if available"
     )
