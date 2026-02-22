@@ -159,7 +159,7 @@ with DAG(
     description="Unified F1 Data Pipeline: Bronze (JSON) -> Silver (Parquet)",
     default_args=default_args,
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
-    schedule_interval="@yearly",
+    schedule="@yearly",
     catchup=True,
     max_active_runs=1,
     tags=["f1", "production", "polars", "pydantic"],
@@ -183,13 +183,11 @@ with DAG(
     ingest_task = PythonOperator(
         task_id="extract_season_data",
         python_callable=run_ingestion,
-        provide_context=True,
     )
 
     transform_task = PythonOperator(
         task_id="transform_season_data",
         python_callable=run_transformation,
-        provide_context=True,
     )
 
     # --- Gold Layer (dbt) via Astronomer Cosmos ---
