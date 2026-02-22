@@ -20,7 +20,7 @@ f1_dbt:
     ci:
       type: clickhouse
       schema: "ci_{{ env_var('CI_JOB_ID', 'local') }}"  # Unique per CI run
-      host: "{{ env_var('CLICKHOUSE_HOST', 'clickhouse') }}"
+      host: "{{ env_var('CLICKHOUSE_HOST', 'localhost') }}"
       port: 8123
       user: default
       password: ""
