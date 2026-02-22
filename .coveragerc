@@ -1,0 +1,3 @@
+[run]
+omit =
+    src/f1_pipeline/transform/run.py
