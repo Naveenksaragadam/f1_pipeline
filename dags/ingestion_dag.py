@@ -1,7 +1,7 @@
 # dags/ingestion_dag.py
 """
 F1 Data Pipeline DAG - Production Grade
-Orchestrates the full lifecycle from raw API ingestion (Bronze) 
+Orchestrates the full lifecycle from raw API ingestion (Bronze)
 to validated, flattened Parquet transformation (Silver).
 """
 
@@ -12,9 +12,7 @@ import pendulum
 from airflow import DAG  # type: ignore
 from airflow.exceptions import AirflowException  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
-
-from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, RenderConfig, ExecutionConfig
-from cosmos.profiles import PostgresUserPasswordProfileMapping
+from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig, RenderConfig
 
 from f1_pipeline.config import (
     MINIO_ACCESS_KEY,
@@ -22,11 +20,6 @@ from f1_pipeline.config import (
     MINIO_BUCKET_SILVER,
     MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
-    CLICKHOUSE_HOST,
-    CLICKHOUSE_PORT,
-    CLICKHOUSE_USER,
-    CLICKHOUSE_PASSWORD,
-    CLICKHOUSE_DB,
 )
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
 from f1_pipeline.minio.object_store import F1ObjectStore
@@ -104,10 +97,7 @@ def run_transformation(**kwargs: Any) -> None:
         season_year = logical_date.year
 
         logger.info(
-            f"\n{'=' * 70}\n"
-            f"🧱 STARTING SILVER TRANSFORMATION\n"
-            f"   Season: {season_year}\n"
-            f"{'=' * 70}"
+            f"\n{'=' * 70}\n🧱 STARTING SILVER TRANSFORMATION\n   Season: {season_year}\n{'=' * 70}"
         )
 
         # Storage Initialization
@@ -190,7 +180,6 @@ with DAG(
     - **Backfills**: Can be re-run for any season between 2024 and 2026.
     """,
 ) as dag:
-
     ingest_task = PythonOperator(
         task_id="extract_season_data",
         python_callable=run_ingestion,

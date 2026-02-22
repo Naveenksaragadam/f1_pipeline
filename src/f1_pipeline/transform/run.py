@@ -1,6 +1,6 @@
 """
 F1 Silver Layer Backfill Utility
-Standalone maintenance script to transform full season data 
+Standalone maintenance script to transform full season data
 from the Bronze (raw) layer to the Silver (clean) layer.
 """
 
@@ -89,9 +89,7 @@ def run_backfill(season: int = 2024) -> None:
                 except Exception as e:
                     logger.error(f"  ❌ Failed {source_key}: {e}")
 
-            logger.info(
-                f"  ✅ Completed {endpoint}: {success_count}/{len(source_objects)} synced."
-            )
+            logger.info(f"  ✅ Completed {endpoint}: {success_count}/{len(source_objects)} synced.")
 
         except Exception as e:
             logger.error(f"  ❌ Critical failure for {endpoint}: {e}")

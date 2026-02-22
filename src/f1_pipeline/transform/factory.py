@@ -4,7 +4,6 @@ Registers and retrieves schemas for various F1 API endpoints.
 Provides a central mapping to decouple endpoint names from their technical schemas.
 """
 
-from typing import Dict, Type
 
 from f1_pipeline.transform.schemas import (
     CircuitSchema,
@@ -24,30 +23,27 @@ from f1_pipeline.transform.schemas import (
 
 # Registry: Maps Ergast API endpoint strings to their validated Pydantic models.
 # This serves as the central orchestration point for the generic transformation engine.
-TRANSFORM_FACTORY: Dict[str, Type[F1BaseModel]] = {
+TRANSFORM_FACTORY: dict[str, type[F1BaseModel]] = {
     # Reference Data
     "seasons": SeasonSchema,
     "circuits": CircuitSchema,
     "status": StatusSchema,
-    
     # Actor Data
     "drivers": DriverSchema,
     "constructors": ConstructorSchema,
-    
     # Performance/Event Data
     "results": ResultSchema,
     "qualifying": QualifyingSchema,
     "sprint": SprintSchema,
     "pitstops": PitStopSchema,
     "laps": LapSchema,
-    
     # Standings
     "driverstandings": DriverStandingSchema,
     "constructorstandings": ConstructorStandingSchema,
 }
 
 
-def get_schema_for_endpoint(endpoint: str) -> Type[F1BaseModel]:
+def get_schema_for_endpoint(endpoint: str) -> type[F1BaseModel]:
     """
     Retrieves the target Pydantic schema for a specific API endpoint.
 

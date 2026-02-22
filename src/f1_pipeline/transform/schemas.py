@@ -1,13 +1,12 @@
 """
 F1 Silver Layer Schemas
-Defines the Pydantic models used for data validation, cleaning, and 
+Defines the Pydantic models used for data validation, cleaning, and
 type enforcement during the Silver layer transformation.
 """
 
-from typing import Annotated, List, Optional
+from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
-
 
 # Elite Domain Type: Standardizes and cleans strings (e.g., Title Case nationalities)
 CleanStr = Annotated[str, AfterValidator(lambda v: v.title().strip() if v else v)]
@@ -27,6 +26,7 @@ class F1BaseModel(BaseModel):
 
 
 # --- Reference Entities ---
+
 
 class SeasonSchema(F1BaseModel):
     """Validation schema for Formula 1 Season entities."""
@@ -63,25 +63,34 @@ class StatusSchema(F1BaseModel):
 
 # --- Actor Entities ---
 
+
 class DriverSchema(F1BaseModel):
     """Validation schema for Formula 1 Driver entities."""
 
-    driver_id: str = Field(alias="driverId", description="Technical identifier (e.g., 'max_verstappen')")
-    permanent_number: Optional[int] = Field(
+    driver_id: str = Field(
+        alias="driverId", description="Technical identifier (e.g., 'max_verstappen')"
+    )
+    permanent_number: int | None = Field(
         None, alias="permanentNumber", description="Official racing number"
     )
-    code: Optional[str] = Field(None, alias="code", description="Three-letter shorthand (e.g., 'VER')")
+    code: str | None = Field(
+        None, alias="code", description="Three-letter shorthand (e.g., 'VER')"
+    )
     given_name: str = Field(alias="givenName", description="Driver's first/given name")
     family_name: str = Field(alias="familyName", description="Driver's last/family name")
     date_of_birth: str = Field(alias="dateOfBirth", description="Birth date in YYYY-MM-DD format")
-    nationality: CleanStr = Field(alias="nationality", description="Standardized nationality string")
+    nationality: CleanStr = Field(
+        alias="nationality", description="Standardized nationality string"
+    )
     url: str = Field(alias="url", description="Wikipedia URL for the driver")
 
 
 class ConstructorSchema(F1BaseModel):
     """Validation schema for Formula 1 Constructor (Team) entities."""
 
-    constructor_id: str = Field(alias="constructorId", description="Technical identifier (e.g., 'red_bull')")
+    constructor_id: str = Field(
+        alias="constructorId", description="Technical identifier (e.g., 'red_bull')"
+    )
     name: str = Field(alias="name", description="Official team name")
     nationality: CleanStr = Field(alias="nationality", description="Standardized team nationality")
     url: str = Field(alias="url", description="Wikipedia URL for the constructor")
@@ -89,11 +98,14 @@ class ConstructorSchema(F1BaseModel):
 
 # --- Performance Entities (Shared) ---
 
+
 class TimeSchema(F1BaseModel):
     """Represents a time duration or timestamp in race sessions."""
 
     time: str = Field(alias="time", description="Human-readable duration (e.g., 1:29:18.303)")
-    millis: Optional[int] = Field(None, alias="millis", description="Duration in milliseconds for calculations")
+    millis: int | None = Field(
+        None, alias="millis", description="Duration in milliseconds for calculations"
+    )
 
 
 class AverageSpeedSchema(F1BaseModel):
@@ -106,29 +118,34 @@ class AverageSpeedSchema(F1BaseModel):
 class FastestLapSchema(F1BaseModel):
     """Details regarding the single fastest lap recorded by a driver during a race."""
 
-    rank: int = Field(alias="rank", description="Ranking relative to other drivers (1 = Fastest overall)")
+    rank: int = Field(
+        alias="rank", description="Ranking relative to other drivers (1 = Fastest overall)"
+    )
     lap: int = Field(alias="lap", description="The lap number on which the fastest time was set")
     time: TimeSchema = Field(alias="Time", description="Duration details of the lap")
-    average_speed: Optional[AverageSpeedSchema] = Field(
+    average_speed: AverageSpeedSchema | None = Field(
         None, alias="AverageSpeed", description="Speed details for the lap"
     )
 
 
 # --- Event Schemas ---
 
+
 class ResultSchema(F1BaseModel):
     """Validation schema for a single Race Result record."""
 
-    number: Optional[int] = Field(None, description="The car number used in the race")
-    position: Optional[int] = Field(None, description="Final race finishing position")
-    points: Optional[float] = Field(None, description="Championship points awarded")
-    grid: Optional[int] = Field(None, description="Starting grid position")
-    laps: Optional[int] = Field(None, description="Total laps completed")
+    number: int | None = Field(None, description="The car number used in the race")
+    position: int | None = Field(None, description="Final race finishing position")
+    points: float | None = Field(None, description="Championship points awarded")
+    grid: int | None = Field(None, description="Starting grid position")
+    laps: int | None = Field(None, description="Total laps completed")
     driver: DriverSchema = Field(alias="Driver", description="Nested driver profile")
     constructor: ConstructorSchema = Field(alias="Constructor", description="Nested team profile")
     status: str = Field(description="Finishing status (e.g., 'Finished', '+1 Lap', 'Engine')")
-    time: Optional[TimeSchema] = Field(None, alias="Time", description="Total race time for finishers")
-    fastest_lap: Optional[FastestLapSchema] = Field(
+    time: TimeSchema | None = Field(
+        None, alias="Time", description="Total race time for finishers"
+    )
+    fastest_lap: FastestLapSchema | None = Field(
         None, alias="FastestLap", description="Details for the fastest lap, if available"
     )
 
@@ -140,9 +157,9 @@ class QualifyingSchema(F1BaseModel):
     position: int = Field(description="Qualifying rank (1 = Pole Position)")
     driver: DriverSchema = Field(alias="Driver", description="Driver profile")
     constructor: ConstructorSchema = Field(alias="Constructor", description="Constructor profile")
-    q1: Optional[str] = Field(None, alias="Q1", description="Fastest lap in Q1 session")
-    q2: Optional[str] = Field(None, alias="Q2", description="Fastest lap in Q2 session")
-    q3: Optional[str] = Field(None, alias="Q3", description="Fastest lap in Q3 session")
+    q1: str | None = Field(None, alias="Q1", description="Fastest lap in Q1 session")
+    q2: str | None = Field(None, alias="Q2", description="Fastest lap in Q2 session")
+    q3: str | None = Field(None, alias="Q3", description="Fastest lap in Q3 session")
 
 
 class SprintSchema(F1BaseModel):
@@ -156,7 +173,7 @@ class SprintSchema(F1BaseModel):
     driver: DriverSchema = Field(alias="Driver", description="Driver profile")
     constructor: ConstructorSchema = Field(alias="Constructor", description="Constructor profile")
     status: str = Field(description="Finishing status")
-    time: Optional[TimeSchema] = Field(None, alias="Time", description="Total time for finishers")
+    time: TimeSchema | None = Field(None, alias="Time", description="Total time for finishers")
 
 
 class PitStopSchema(F1BaseModel):
@@ -181,10 +198,13 @@ class LapSchema(F1BaseModel):
     """Higher-order schema for a full lap's worth of timings."""
 
     number: int = Field(description="The lap number")
-    timings: List[LapTimingSchema] = Field(alias="Timings", description="List of driver timings for this lap")
+    timings: list[LapTimingSchema] = Field(
+        alias="Timings", description="List of driver timings for this lap"
+    )
 
 
 # --- Standing Schemas ---
+
 
 class DriverStandingSchema(F1BaseModel):
     """Validation schema for Driver Championship standings."""
@@ -193,7 +213,7 @@ class DriverStandingSchema(F1BaseModel):
     points: float = Field(description="Total points accumulated")
     wins: int = Field(description="Total race wins in the season")
     driver: DriverSchema = Field(alias="Driver", description="Driver profile")
-    constructors: List[ConstructorSchema] = Field(
+    constructors: list[ConstructorSchema] = Field(
         alias="Constructors", description="The team(s) the driver has represented"
     )
 
