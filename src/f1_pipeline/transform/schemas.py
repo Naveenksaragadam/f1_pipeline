@@ -145,7 +145,10 @@ class RaceSchema(F1BaseModel):
     race_name: str = Field(alias="raceName", description="Name of the race event")
     circuit: CircuitSchema = Field(alias="Circuit", description="Nested circuit profile")
     date: str = Field(description="Race date in YYYY-MM-DD format")
-    time: str | None = Field(None, description="Race start time in UTC")
+    # Note: unlike other schemas, this is a wall-clock start time (e.g. "13:00:00Z"),
+    # not a TimeSchema object (which represents a duration with millis). The race
+    # schedule endpoint uses a different time representation than result endpoints.
+    time: str | None = Field(None, description="Race start time in UTC (e.g. '13:00:00Z')")
 
 
 class ResultSchema(F1BaseModel):

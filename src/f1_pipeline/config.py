@@ -22,25 +22,25 @@ if not _env_found:
     logger.info("ℹ️  No .env file found. Using environment variables from system/Docker.")
 
 
-def get_env_required(key: str, default: str | None = None) -> str:
+def get_env_required(key: str) -> str:
     """
-    Get required environment variable with validation.
+    Get a required environment variable.
 
     Args:
         key: Environment variable name
-        default: Default value if not set
 
     Returns:
         Environment variable value
 
     Raises:
-        SystemExit: If required variable is missing and no default provided
+        EnvironmentError: If the variable is not set
     """
-    value = os.getenv(key, default)
+    value = os.getenv(key)
     if value is None:
-        logger.error(f"❌ Required environment variable '{key}' is not set!")
-        logger.error("Please check your .env file or docker-compose environment section.")
-        sys.exit(1)
+        raise EnvironmentError(
+            f"Required environment variable '{key}' is not set. "
+            "Check your .env file or docker-compose environment section."
+        )
     return value
 
 
@@ -101,6 +101,9 @@ class EndpointConfig(TypedDict):
 
     group: str
     url_pattern: str
+    # Note: has_season and has_round document the expected URL parameters for each
+    # endpoint, but are not currently enforced by the ingestor at call time.
+    # They serve as inline documentation of the API contract.
     has_season: bool
     has_round: bool
     pagination: bool
@@ -214,7 +217,7 @@ def validate_configuration() -> bool:
         True if validation passes
 
     Raises:
-        SystemExit: If validation fails
+        EnvironmentError: If any required configuration is missing or invalid
     """
     errors = []
 
@@ -237,10 +240,9 @@ def validate_configuration() -> bool:
             errors.append(f"Endpoint '{endpoint_name}' missing group")
 
     if errors:
-        logger.error("❌ Configuration validation failed:")
-        for error in errors:
-            logger.error(f"   - {error}")
-        sys.exit(1)
+        error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        logger.error(f"❌ {error_msg}")
+        raise EnvironmentError(error_msg)
 
     logger.info("✅ Configuration validation passed")
     return True
