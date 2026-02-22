@@ -403,10 +403,14 @@ def test_put_object_client_error(store: F1ObjectStore, mock_s3_client: MagicMock
 
 
 def test_list_objects_client_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
-    """Test list_objects S3 ClientError (returns empty list)."""
-    # Paginator error
+    """Test list_objects re-raises ClientError rather than silently returning [].
+
+    Returning [] on a real S3 error is indistinguishable from 'no objects found'.
+    Callers are responsible for handling the error (e.g. _get_existing_keys falls back).
+    """
     mock_paginator = MagicMock()
     mock_paginator.paginate.side_effect = ClientError({"Error": {"Code": "500"}}, "ListObjectsV2")
     mock_s3_client.get_paginator.return_value = mock_paginator
 
-    assert store.list_objects() == []
+    with pytest.raises(ClientError):
+        store.list_objects()

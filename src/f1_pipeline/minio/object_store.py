@@ -369,7 +369,7 @@ class F1ObjectStore:
             return keys
         except ClientError as e:
             logger.error(f"❌ Error listing objects with prefix '{prefix}': {e}")
-            return []
+            raise
 
     def get_object(self, key: str) -> bytes:
         """
