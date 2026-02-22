@@ -1,6 +1,6 @@
 # 🏎️ F1 Data Pipeline
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A **production-grade, open-source data platform** that ingests Formula 1
@@ -76,13 +76,13 @@ real-world production deployments.
          │
          ▼
 ┌─────────────────────────────────────────────────────┐
-│              Apache Airflow                         │
+│              Apache Airflow 3.x                     │
 │  ┌──────────────────────────────────────────────┐   │
 │  │  DAG: f1_pipeline (Yearly Schedule)          │   │
 │  │                                              │   │
-│  │  Task 1: Extract (API → Bronze) [ACTIVE]     │   │
-│  │  Task 2: Transform (Bronze → Silver) [WIP]   │   │
-│  │  Task 3: Trigger dbt Models [PLANNED]        │   │
+│  │  Task 1: Extract (API → Bronze) ✅           │   │
+│  │  Task 2: Transform (Bronze → Silver) ✅      │   │
+│  │  Group 3: dbt Gold Layer (via Cosmos) ✅     │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
          │
@@ -91,7 +91,7 @@ real-world production deployments.
 │              MinIO (S3-Compatible)                  │
 │  ┌──────────┐  ┌──────────┐                         │
 │  │  Bronze  │  │  Silver  │                         │
-│  │  Raw     │→ │ Parquet  │  (WIP Phase)            │
+│  │  Raw     │→ │ Parquet  │  (Polars/Pydantic)      │
 │  │  JSON    │  │ Typed    │                         │
 │  └──────────┘  └──────────┘                         │
 └─────────────────────────────────────────────────────┘
@@ -111,8 +111,8 @@ real-world production deployments.
 | Layer      | Format     | Purpose                                       | Status     |
 | ---------- | ---------- | --------------------------------------------- | ---------- |
 | **Bronze** | JSON       | Raw immutable source data                     | ✅ Active  |
-| **Silver** | Parquet    | Cleaned, typed, validated (via Python/Pandas) | 🚧 WIP     |
-| **Gold**   | ClickHouse | Analytics-ready facts & dims (via dbt)        | 📅 Planned |
+| **Silver** | Parquet    | Cleaned, typed, validated (via Polars)        | ✅ Active  |
+| **Gold**   | ClickHouse | Analytics-ready facts & dims (via dbt)        | ✅ Active  |
 
 ---
 
@@ -120,9 +120,10 @@ real-world production deployments.
 
 | Component             | Technology              | Purpose                               |
 | --------------------- | ----------------------- | ------------------------------------- |
-| **Orchestration**     | Apache Airflow 2.10.3   | DAG-based workflow management         |
+| **Orchestration**     | Apache Airflow 3.1.7    | 2026 FAANG-grade DAG management       |
+| **dbt Management**    | Astronomer Cosmos       | Granular dbt observability           |
 | **Storage**           | MinIO (S3-compatible)   | Object storage (Bronze/Silver layers) |
-| **Transformation**    | Python 3.11 + Pandas    | Data processing and validation        |
+| **Transformation**    | Python 3.12 + Polars    | High-performance data processing      |
 | **Data Warehouse**    | ClickHouse 24.3         | High-performance OLAP database        |
 | **Schema Validation** | Pydantic 2.x            | Type-safe data validation             |
 | **HTTP Client**       | Requests + Tenacity     | API calls with retry logic            |
@@ -140,7 +141,7 @@ real-world production deployments.
 
 - **Docker Desktop**: 4.20+ ([Download](https://www.docker.com/products/docker-desktop))
 - **Docker Compose**: 2.20+ (included with Docker Desktop)
-- **Python**: 3.11+ ([Download](https://www.python.org/downloads/))
+- **Python**: 3.12+ ([Download](https://www.python.org/downloads/))
 - **Git**: Latest version
 
 ### System Requirements
@@ -272,8 +273,10 @@ f1_pipeline/
 │       │   └── init_storage.py   # Bucket initialization
 │       │
 │       └── transform/
-│           ├── schemas.py        # Pydantic models
-│           └── (future transformers)
+│           ├── base.py           # Base transformer class
+│           ├── factory.py        # Transformer factory
+│           ├── run.py            # Transformation runner
+│           └── schemas.py        # Pydantic models
 │
 ├── tests/
 │   ├── test_ingestor.py          # Unit tests
@@ -656,17 +659,17 @@ for details.
 - [x] Idempotent processing
 - [x] Airflow orchestration
 
-### Phase 2: Silver Layer (In Progress)
+### Phase 2: Silver Layer ✅
 
-- [ ] Parquet transformation
-- [ ] Schema validation with Pydantic
-- [ ] Data quality tests
-- [ ] Deduplication logic
+- [x] Parquet transformation (Polars)
+- [x] Schema validation (Pydantic)
+- [x] Auto-explosion of nested lists
+- [x] Recursive flattening
 
-### Phase 3: Gold Layer (Planned)
+### Phase 3: Gold Layer (In Progress)
 
-- [ ] ClickHouse table definitions
-- [ ] dbt models (facts & dimensions)
+- [x] Astronomer Cosmos integration
+- [ ] dbt fact & dimension models
 - [ ] SCD Type 2 implementation
 - [ ] Materialized views
 

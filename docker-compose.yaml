@@ -45,6 +45,7 @@ x-airflow-common: &airflow-common
     - ./src:/opt/airflow/src
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
+    - ./f1_dbt:/opt/airflow/f1_dbt
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
@@ -190,32 +191,6 @@ services:
       resources:
         limits:
           memory: 1G
-
-  # --- DBT ---
-  dbt:
-    build:
-      context: .
-      dockerfile: f1_dbt/Dockerfile
-    container_name: f1_dbt
-    working_dir: /usr/app/f1_dbt
-    volumes:
-      - .:/usr/app
-      - ./f1_dbt/profiles.yml:/root/.dbt/profiles.yml
-    environment:
-      # ClickHouse Connection
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: 8123
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
-      CLICKHOUSE_DB: f1_staging
-      # dbt Config
-      DBT_PROFILES_DIR: /root/.dbt
-      DBT_PROJECT_DIR: /usr/app/f1_dbt
-    depends_on:
-      clickhouse:
-        condition: service_started
-    profiles:
-      - tools
 
 volumes:
   postgres-db-volume:

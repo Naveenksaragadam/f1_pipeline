@@ -7,18 +7,43 @@ Provides a central mapping to decouple endpoint names from their technical schem
 from typing import Dict, Type
 
 from f1_pipeline.transform.schemas import (
+    CircuitSchema,
     ConstructorSchema,
+    ConstructorStandingSchema,
     DriverSchema,
+    DriverStandingSchema,
     F1BaseModel,
+    LapSchema,
+    PitStopSchema,
+    QualifyingSchema,
     ResultSchema,
+    SeasonSchema,
+    SprintSchema,
+    StatusSchema,
 )
 
 # Registry: Maps Ergast API endpoint strings to their validated Pydantic models.
-# This makes the pipeline easily extensible for new endpoints (e.g., 'lap_times').
+# This serves as the central orchestration point for the generic transformation engine.
 TRANSFORM_FACTORY: Dict[str, Type[F1BaseModel]] = {
+    # Reference Data
+    "seasons": SeasonSchema,
+    "circuits": CircuitSchema,
+    "status": StatusSchema,
+    
+    # Actor Data
     "drivers": DriverSchema,
     "constructors": ConstructorSchema,
+    
+    # Performance/Event Data
     "results": ResultSchema,
+    "qualifying": QualifyingSchema,
+    "sprint": SprintSchema,
+    "pitstops": PitStopSchema,
+    "laps": LapSchema,
+    
+    # Standings
+    "driverstandings": DriverStandingSchema,
+    "constructorstandings": ConstructorStandingSchema,
 }
 
 
@@ -35,7 +60,7 @@ def get_schema_for_endpoint(endpoint: str) -> Type[F1BaseModel]:
     Raises:
         ValueError: If the endpoint is not registered in the factory.
     """
-    schema = TRANSFORM_FACTORY.get(endpoint)
+    schema = TRANSFORM_FACTORY.get(endpoint.lower())
     if not schema:
         raise ValueError(
             f"❌ No transformation schema registered for endpoint: '{endpoint}'. "

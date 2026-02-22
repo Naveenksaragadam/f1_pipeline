@@ -13,17 +13,27 @@ from airflow import DAG  # type: ignore
 from airflow.exceptions import AirflowException  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
 
+from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, RenderConfig, ExecutionConfig
+from cosmos.profiles import PostgresUserPasswordProfileMapping
+
 from f1_pipeline.config import (
     MINIO_ACCESS_KEY,
     MINIO_BUCKET_BRONZE,
     MINIO_BUCKET_SILVER,
     MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
+    CLICKHOUSE_HOST,
+    CLICKHOUSE_PORT,
+    CLICKHOUSE_USER,
+    CLICKHOUSE_PASSWORD,
+    CLICKHOUSE_DB,
 )
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
 from f1_pipeline.minio.object_store import F1ObjectStore
 from f1_pipeline.transform.base import F1Transformer
 from f1_pipeline.transform.factory import TRANSFORM_FACTORY
+
+DBT_PROJECT_PATH = "/opt/airflow/f1_dbt"
 
 logger = logging.getLogger(__name__)
 
@@ -193,5 +203,22 @@ with DAG(
         provide_context=True,
     )
 
-    # Dependency: Extract must succeed before Transformation begins
-    ingest_task >> transform_task
+    # --- Gold Layer (dbt) via Astronomer Cosmos ---
+    gold_layer = DbtTaskGroup(
+        group_id="gold_layer_dbt",
+        project_config=ProjectConfig(DBT_PROJECT_PATH),
+        profile_config=ProfileConfig(
+            profile_name="f1_dbt",
+            target_name="dev",
+            profiles_yml_filepath=f"{DBT_PROJECT_PATH}/profiles.yml",
+        ),
+        render_config=RenderConfig(
+            select=["path:models/gold"],  # Only run gold models for now
+        ),
+        execution_config=ExecutionConfig(
+            dbt_executable_path="/home/airflow/.local/bin/dbt",
+        ),
+    )
+
+    # Dependency Flow: Bronze -> Silver -> Gold
+    ingest_task >> transform_task >> gold_layer
