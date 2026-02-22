@@ -98,7 +98,14 @@ class ConstructorSchema(F1BaseModel):
 
 
 class TimeSchema(F1BaseModel):
-    """Represents a time duration or timestamp in race sessions."""
+    """Represents a time duration or timestamp in race sessions.
+
+    Note:
+        The Ergast API uses lowercase ``time`` and ``millis`` for this nested
+        object (e.g. in LapTimeSchema), but uppercase ``Time`` when this schema
+        is embedded inside result/qualifying objects. The aliases here are correct
+        for their context — do not change them to uppercase.
+    """
 
     time: str = Field(alias="time", description="Human-readable duration (e.g., 1:29:18.303)")
     millis: int | None = Field(
@@ -191,7 +198,13 @@ class PitStopSchema(F1BaseModel):
     lap: int = Field(description="The lap number on which the stop occurred")
     stop: int = Field(description="The sequence number for this stop (e.g., 1st stop, 2nd stop)")
     time: str = Field(description="The time of day when the stop occurred (e.g., 15:02:11)")
-    duration: float = Field(description="The time spent in the pits (in seconds)")
+    duration: str = Field(
+        description=(
+            "Raw pit stop duration from Ergast (e.g. '23.456' or '1:23.456'). "
+            "Kept as str to avoid silent coercion failure on the '1:23.456' format. "
+            "Convert to seconds in the transformation layer."
+        )
+    )
 
 
 class LapTimingSchema(F1BaseModel):

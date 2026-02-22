@@ -44,8 +44,9 @@ def run_manual_backfill(
 
     # Validate year range
     if start_year > end_year:
-        logger.error(f"❌ Invalid year range: {start_year} > {end_year}")
-        sys.exit(1)
+        raise ValueError(
+            f"Invalid year range: start_year ({start_year}) cannot be greater than end_year ({end_year})"
+        )
 
     if end_year >= current_year:
         logger.warning(
@@ -61,8 +62,7 @@ def run_manual_backfill(
     try:
         ingestor = F1DataIngestor(validate_connection=True)
     except Exception as e:
-        logger.error(f"❌ Failed to initialize ingestor: {e}")
-        sys.exit(1)
+        raise RuntimeError(f"Failed to initialize ingestor: {e}") from e
 
     # Track results
     total_seasons = end_year - start_year + 1

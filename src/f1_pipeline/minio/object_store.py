@@ -186,10 +186,14 @@ class F1ObjectStore:
 
     def _empty_bucket(self) -> None:
         """
-        Delete all objects in the bucket.
+        Permanently delete all objects in the bucket.
 
-        Note:
-            This is a destructive operation used internally by delete_bucket.
+        Warning:
+            This operation is **irreversible** and will permanently destroy all
+            data in the bucket. It is only called internally by
+            ``delete_bucket(force=True)``, which requires an explicit opt-in.
+            Do NOT call this method directly — use ``delete_bucket(force=True)``
+            instead so that the intent is explicit at the call site.
         """
         paginator = self.client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket_name):
