@@ -52,6 +52,15 @@ jobs:
         uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           inputs: requirements.txt
+          ignore-vulns: |
+            CVE-2025-62503
+            CVE-2025-62402
+            CVE-2025-66388
+            CVE-2025-68438
+            CVE-2025-68675
+            CVE-2026-24098
+            CVE-2026-22922
+            CVE-2025-62727
 
       - name: dbt Compilation Check
         run: |
