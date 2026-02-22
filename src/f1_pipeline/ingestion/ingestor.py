@@ -225,12 +225,18 @@ class F1DataIngestor:
             logger.debug(f"Found {len(existing_keys)} existing files for prefix: {prefix}")
             return set(existing_keys)
         except Exception as e:
-            error_code = getattr(getattr(e, "response", {}), "get", lambda *_: None)("Error", {}).get("Code", "")
+            # Safely extract Boto3 error code if present (e.g. ClientError)
+            response = getattr(e, "response", {})
+            error_code = (
+                response.get("Error", {}).get("Code", "") if isinstance(response, dict) else ""
+            )
             if error_code in ("403", "AccessDenied"):
                 # Permission errors are infrastructure problems — don't silently swallow.
                 logger.error(f"❌ Access denied listing objects (prefix={prefix}): {e}")
                 raise
-            logger.warning(f"Failed to list existing objects: {e}. Falling back to per-key HEAD checks.")
+            logger.warning(
+                f"Failed to list existing objects: {e}. Falling back to per-key HEAD checks."
+            )
             return set()
 
     def _save_to_minio(self, data: dict[str, Any], path: str, metadata: dict[str, Any]) -> None:
@@ -544,8 +550,7 @@ class F1DataIngestor:
             logger.info(f"📖 Reading race calendar from Bronze: {races_key}")
             races_envelope = self.store.get_json(races_key)
             races_list: list[dict[str, Any]] = (
-                races_envelope
-                .get("data", {})
+                races_envelope.get("data", {})
                 .get("MRData", {})
                 .get("RaceTable", {})
                 .get("Races", [])
