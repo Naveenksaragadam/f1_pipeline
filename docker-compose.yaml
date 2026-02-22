@@ -8,6 +8,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "${AIRFLOW_USERNAME:-airflow}:admin"
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: '/opt/airflow/config/airflow_passwords.json'
 
     # System Config
     AIRFLOW_UID: ${AIRFLOW_UID:-50000}
@@ -46,6 +48,7 @@ x-airflow-common: &airflow-common
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./f1_dbt:/opt/airflow/f1_dbt
+    - airflow-config:/opt/airflow/config
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
@@ -135,17 +138,13 @@ services:
     <<: *airflow-common
     container_name: f1_airflow_init
     # Fixed: Changed command to 'version' because setup is now handled automatically via env variables
-    command: version
+    command: >
+      bash -c " mkdir -p /opt/airflow/config && python3 -c 'import json, os; print(json.dumps({os.environ[\"AIRFLOW_USERNAME\"]: os.environ[\"AIRFLOW_PASSWORD\"]}))' > /opt/airflow/config/airflow_passwords.json && airflow version "
     environment:
       <<: *airflow-common-env
+      AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
+      AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-airflow}
       _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
-      _AIRFLOW_WWW_USER_USERNAME: 'airflow'
-      _AIRFLOW_WWW_USER_PASSWORD: 'airflow'
-      _AIRFLOW_WWW_USER_FIRSTNAME: 'Admin'
-      _AIRFLOW_WWW_USER_LASTNAME: 'User'
-      _AIRFLOW_WWW_USER_EMAIL: 'admin@example.com'
-      _AIRFLOW_WWW_USER_ROLE: 'Admin'
     user: "0:0"
     restart: "no"
     depends_on:
@@ -158,11 +157,11 @@ services:
   airflow-webserver:
     <<: *airflow-common
     container_name: f1_airflow_webserver
-    command: webserver
+    command: api-server
     ports:
       - "8080:8080"
     healthcheck:
-      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -196,3 +195,4 @@ volumes:
   postgres-db-volume:
   clickhouse_data:
   clickhouse_log:
+  airflow-config:

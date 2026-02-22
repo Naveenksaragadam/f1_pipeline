@@ -1,12 +1,12 @@
 """
 F1 Transformer Engine
-Provides a robust orchestration layer for transforming raw JSON from the Bronze layer 
+Provides a robust orchestration layer for transforming raw JSON from the Bronze layer
 into typed, flattened Parquet files in the Silver layer.
 """
 
 import io
 import logging
-from typing import Any, Dict, List, Type
+from typing import Any
 
 import polars as pl
 
@@ -20,7 +20,7 @@ class F1Transformer:
     """
     Orchestrates the transformation of raw F1 data objects.
 
-    Uses Pydantic for schema validation/cleaning and Polars for efficient 
+    Uses Pydantic for schema validation/cleaning and Polars for efficient
     columnar data manipulation and Parquet writing.
     """
 
@@ -28,7 +28,7 @@ class F1Transformer:
         self,
         bronze_store: F1ObjectStore,
         silver_store: F1ObjectStore,
-        schema_class: Type[F1BaseModel],
+        schema_class: type[F1BaseModel],
     ):
         """
         Initialize the transformer with storage interfaces and a target schema.
@@ -73,7 +73,7 @@ class F1Transformer:
 
         # 3 & 4. Validate and convert to Polars
         df = self.process_batch(records)
-        
+
         if df.is_empty():
             logger.warning(f"⚠️ Resulting DataFrame is empty for {source_key}")
             return
@@ -96,17 +96,17 @@ class F1Transformer:
         )
         logger.info(f"✅ Successfully transformed {source_key} -> {target_key}")
 
-    def _extract_records(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _extract_records(self, raw_data: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Dynamically locate the actual data rows within the nested JSON payload.
 
         API responses from Ergast are often deeply nested (e.g., MRData -> RaceTable -> Races -> Results).
-        This method uses a recursive heuristic to find lists of objects. It respects the 
+        This method uses a recursive heuristic to find lists of objects. It respects the
         nesting depth expected by the schema class.
         """
         data_root = raw_data.get("data", {}).get("MRData", raw_data)
 
-        def find_candidate_lists(obj: Any) -> List[List[Any]]:
+        def find_candidate_lists(obj: Any) -> list[list[Any]]:
             """Returns all lists found in the object tree."""
             candidates = []
             if isinstance(obj, list):
@@ -120,44 +120,66 @@ class F1Transformer:
 
         # Intelligent Search: We want the list that is MOST LIKELY our data records.
         # Heuristic: Find all lists, and choose the one whose items best match our schema,
-        # OR simply the one that isn't wrapped in another list (to avoid returning 'Timings' 
+        # OR simply the one that isn't wrapped in another list (to avoid returning 'Timings'
         # when we want 'Laps').
-        
+
         all_lists = find_candidate_lists(data_root)
         if not all_lists:
             return []
 
         # For endpoints like 'laps', we have Laps (list) -> Timings (list).
         # We generally want the HIGHEST level list that contains dicts.
-        # Why? Because our Pydantic schemas are designed to handle the nesting 
+        # Why? Because our Pydantic schemas are designed to handle the nesting
         # and then we explode/flatten in Polars.
         for lst in all_lists:
             if lst and isinstance(lst[0], dict):
                 # If the first item of this list contains another list,
                 # it's a parent list (like 'Laps' containing 'Timings').
-                # In our new architecture, we WANT this parent list because 
+                # In our new architecture, we WANT this parent list because
                 # LapSchema handles the 'Timings' list internally.
                 return lst
 
         return []
 
-    def process_batch(self, records: List[Dict[str, Any]]) -> pl.DataFrame:
+    def process_batch(self, records: list[dict[str, Any]]) -> pl.DataFrame:
         """
         Validate records against the Pydantic schema and convert to Polars.
+
+        Implements a 'Fail-Fast' strategy: If more than 20% of records fail
+        validation, the pipeline crashes to prevent silent data loss.
         """
         valid_items = []
-        errors = 0
+        error_details = []
+        total_count = len(records)
 
-        for record in records:
+        for i, record in enumerate(records):
             try:
                 validated_obj = self.schema_class.model_validate(record)
                 valid_items.append(validated_obj.model_dump(by_alias=False))
-            except Exception:
-                errors += 1
+            except Exception as e:
+                error_details.append(f"Record {i}: {str(e)}")
+                if len(error_details) <= 3:
+                    logger.debug(f"❌ Validation failure on record {i}: {e}")
                 continue
 
-        if errors > 0:
-            logger.warning(f"⚠️ Skipped {errors} records due to validation failure.")
+        error_count = len(error_details)
+        if error_count > 0:
+            error_rate = error_count / total_count
+            logger.warning(
+                f"⚠️ Validation issues found: {error_count}/{total_count} records failed "
+                f"({error_rate:.1%})"
+            )
+
+            # Failure Threshold: Crash if > 20% fails, or if it's a small batch with multiple errors
+            # This ensures we don't proceed with significantly broken data.
+            if error_rate > 0.20 or (total_count < 5 and error_count > 0):
+                logger.error("🛑 Error threshold exceeded! First 3 errors:")
+                for err in error_details[:3]:
+                    logger.error(f"   - {err}")
+                raise ValueError(
+                    f"Schema Enforcement Triggered: {error_count} validation errors found "
+                    f"for {self.schema_class.__name__}. Check logs for details."
+                )
 
         return pl.DataFrame(valid_items)
 
@@ -166,7 +188,7 @@ class F1Transformer:
         Unified handler for exploding lists and unnesting structs.
         """
         curr_df = df
-        
+
         while True:
             # 1. Handle List Explosion (1-to-many)
             # Find any columns that are lists (e.g., 'timings' in Laps, 'constructors' in Standings)
@@ -175,7 +197,7 @@ class F1Transformer:
                 for name, dtype in zip(curr_df.columns, curr_df.dtypes)
                 if isinstance(dtype, pl.List)
             ]
-            
+
             if list_cols:
                 # We explode one at a time to maintain relational integrity
                 for col in list_cols:
@@ -199,9 +221,7 @@ class F1Transformer:
                 dtype = curr_df.schema[col]
                 new_field_names = [f"{col}_{f.name}" for f in dtype.fields]
 
-                curr_df = curr_df.with_columns(
-                    pl.col(col).struct.rename_fields(new_field_names)
-                )
+                curr_df = curr_df.with_columns(pl.col(col).struct.rename_fields(new_field_names))
 
             curr_df = curr_df.unnest(struct_cols)
 
