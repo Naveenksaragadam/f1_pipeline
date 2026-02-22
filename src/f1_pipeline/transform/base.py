@@ -207,11 +207,11 @@ class F1Transformer:
             ]
 
             if list_cols:
-                # We explode one at a time to maintain relational integrity
-                for col in list_cols:
-                    logger.debug(f"💥 Exploding list column: {col}")
-                    curr_df = curr_df.explode(col)
-                # Restart loop to check for new structs/lists after explosion
+                # Explode all list columns in a single Polars operation.
+                # Safe because our schemas never have two independent list columns
+                # on the same row — each schema has exactly one nested list at a time.
+                logger.debug(f"💥 Exploding list columns: {list_cols}")
+                curr_df = curr_df.explode(list_cols)
                 continue
 
             # 2. Handle Struct Unnesting

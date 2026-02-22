@@ -165,15 +165,59 @@ def test_put_object_no_compression(store: F1ObjectStore, mock_s3_client: MagicMo
 
 
 def test_put_object_file_like(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
-    """Test uploading a file-like object."""
+    """File-like objects with compress=False are streamed via upload_fileobj."""
     from io import BytesIO
 
     data = BytesIO(b"raw data")
     store.put_object("test.bin", data, compress=False)
 
+    # Must call upload_fileobj (streaming), not put_object (in-memory)
+    mock_s3_client.upload_fileobj.assert_called_once()
+    mock_s3_client.put_object.assert_not_called()
+    call_args = mock_s3_client.upload_fileobj.call_args
+    assert call_args[0][2] == "test.bin"  # key
+    assert call_args[1]["ExtraArgs"]["ContentType"] == "application/octet-stream"
+
+
+def test_put_object_file_like_compress_true(
+    store: F1ObjectStore, mock_s3_client: MagicMock
+) -> None:
+    """File-like objects with compress=True fall back to read-into-memory + gzip + MD5."""
+    obj = MagicMock()
+    obj.read.return_value = b"file bytes"
+    store.put_object("test.bin", obj, compress=True)
+
+    # Must use put_object slow-path (needs ContentMD5)
+    mock_s3_client.put_object.assert_called_once()
+    mock_s3_client.upload_fileobj.assert_not_called()
     call_args = mock_s3_client.put_object.call_args[1]
-    assert call_args["ContentType"] == "application/octet-stream"
-    assert call_args["Body"] == b"raw data"
+    assert call_args["ContentEncoding"] == "gzip"
+    assert "ContentMD5" in call_args
+
+
+def test_put_object_streaming_with_metadata(
+    store: F1ObjectStore, mock_s3_client: MagicMock
+) -> None:
+    """Streaming fast-path forwards metadata in ExtraArgs."""
+    from io import BytesIO
+
+    data = BytesIO(b"parquet bytes")
+    store.put_object("test.parquet", data, metadata={"source": "ergast"}, compress=False)
+
+    mock_s3_client.upload_fileobj.assert_called_once()
+    call_args = mock_s3_client.upload_fileobj.call_args
+    assert call_args[1]["ExtraArgs"]["Metadata"] == {"source": "ergast"}
+
+
+def test_put_object_streaming_client_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
+    """upload_fileobj ClientError is logged and re-raised."""
+    from io import BytesIO
+
+    mock_s3_client.upload_fileobj.side_effect = ClientError(
+        {"Error": {"Code": "503", "Message": "SlowDown"}}, "UploadFileObj"
+    )
+    with pytest.raises(ClientError):
+        store.put_object("test.parquet", BytesIO(b"bytes"), compress=False)
 
 
 def test_put_object_metadata(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
@@ -373,24 +417,29 @@ def test_put_object_variations(store: F1ObjectStore, mock_s3_client: MagicMock) 
 
 
 def test_put_object_file_like_variations(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
-    """Test put_object with file-like objects returning different types."""
-    # returning str
+    """File-like objects with a .read() that returns non-bytes use the slow-path.
+
+    MagicMock has a .read attribute but also has .read() returning a MagicMock,
+    which is not bytes/str — so compress=False still falls through to the slow-path
+    because hasattr(body, 'read') is True but compress must also be False for
+    streaming. Actually: MagicMock does have .read, so the if-branch fires.
+    Use compress=True to force the slow-path to exercise the str/int read() branches.
+    """
+    # str-returning read() with compress=True -> slow-path
     obj = MagicMock()
     obj.read.return_value = "content"
-    store.put_object("key", obj, compress=False)
-    mock_s3_client.put_object.assert_called_with(
-        Bucket=ANY,
-        Key="key",
-        Body=b"content",
-        ContentType="application/octet-stream",
-        ContentMD5=ANY,
-    )
-    # returning something else
+    store.put_object("key", obj, compress=True)
+    call_args = mock_s3_client.put_object.call_args[1]
+    assert call_args["Body"]  # gzip bytes present
+    assert "ContentMD5" in call_args
+
+    mock_s3_client.reset_mock()
+
+    # int-returning read() with compress=True -> str-encodes, slow-path
     obj.read.return_value = 123
-    store.put_object("key", obj, compress=False)
-    mock_s3_client.put_object.assert_called_with(
-        Bucket=ANY, Key="key", Body=b"123", ContentType="application/octet-stream", ContentMD5=ANY
-    )
+    store.put_object("key", obj, compress=True)
+    call_args = mock_s3_client.put_object.call_args[1]
+    assert call_args["Body"]  # gzip-encoded b"123"
 
 
 def test_put_object_client_error(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:

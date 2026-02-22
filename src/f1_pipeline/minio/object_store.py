@@ -249,7 +249,23 @@ class F1ObjectStore:
         elif isinstance(body, (bytes, bytearray, memoryview)):
             data = bytes(body)
         else:
-            # Handle file-like objects: Read into memory for compression/hashing
+            # File-like object path.
+            # Fast-path: if compression is disabled, stream directly to S3 via
+            # upload_fileobj — avoids loading large binaries (e.g. Parquet) into
+            # memory. boto3 handles multipart upload and ETag integrity natively.
+            if not compress and hasattr(body, "read"):
+                try:
+                    extra_args: dict[str, Any] = {"ContentType": content_type}
+                    if metadata:
+                        extra_args["Metadata"] = metadata
+                    self.client.upload_fileobj(body, self.bucket_name, key, ExtraArgs=extra_args)
+                    logger.debug(f"✅ Streamed upload: {key}")
+                    return
+                except (ClientError, BotoCoreError) as e:
+                    logger.error(f"❌ Streaming upload failed for {key}: {e}")
+                    raise
+
+            # Slow-path: read into memory so we can apply gzip + MD5.
             read_method = getattr(body, "read", None)
             if callable(read_method):
                 content = read_method()
