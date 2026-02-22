@@ -186,7 +186,9 @@ def test_process_object_empty_post_complex_types(mock_stores: tuple[MagicMock, M
         with patch.object(transformer, "process_batch", return_value=valid_df):
             # Then mock _process_complex_types to somehow return an empty DataFrame
             with patch.object(transformer, "_process_complex_types", return_value=pl.DataFrame()):
-                with pytest.raises(ValueError, match="Transformation resulted in an empty DataFrame"):
+                with pytest.raises(
+                    ValueError, match="Transformation resulted in an empty DataFrame"
+                ):
                     transformer.process_object("source.json", "target.parquet")
 
 
