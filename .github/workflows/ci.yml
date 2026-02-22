@@ -11,6 +11,10 @@ on:
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
+    env:
+      CLICKHOUSE_PASSWORD: "ci-dummy-password"
+      MINIO_ACCESS_KEY: "ci-dummy-key"
+      MINIO_SECRET_KEY: "ci-dummy-secret"
     
     steps:
       - name: Checkout code
