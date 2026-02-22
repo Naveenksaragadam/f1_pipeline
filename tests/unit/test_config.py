@@ -17,7 +17,6 @@ def test_get_env_required_success() -> None:
         assert config.get_env_required("TEST_KEY") == "test_value"
 
 
-
 def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
     """Test module initialization when .env is not found (covers line 21)."""
     import importlib
@@ -75,7 +74,6 @@ def test_validate_configuration_empty_endpoints() -> None:
         with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
         assert "ENDPOINT_CONFIG is empty" in str(excinfo.value)
-
 
     bad_config = {"bad": {"group": "error"}}  # Missing url_pattern
     with patch("f1_pipeline.config.ENDPOINT_CONFIG", bad_config):
