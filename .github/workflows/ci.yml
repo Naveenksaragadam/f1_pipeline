@@ -37,7 +37,9 @@ jobs:
         run: uv run mypy src tests dags
 
       - name: Run Tests with 100% Coverage Threshold
-        run: uv run pytest tests/ --cov=src/f1_pipeline --cov-fail-under=100
+        run: |
+          rm -f .coverage
+          uv run pytest tests/ --cov=src/f1_pipeline --cov-fail-under=100
 
       - name: Export requirements for Dependency Audit
         run: uv pip compile pyproject.toml -o requirements.txt
@@ -62,8 +64,6 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
           extra_args: --debug --only-verified
 
   docker-verification:
