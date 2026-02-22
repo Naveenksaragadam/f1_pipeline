@@ -13,7 +13,9 @@ Key Improvements:
 """
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,6 +51,47 @@ from ..exceptions import DataCorruptionError
 from .http_client import create_session
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class IngestorStats:
+    """Thread-safe accumulator for extraction run statistics.
+
+    All mutation methods acquire a lock so that concurrent page workers
+    can safely update shared counters without data races.
+    """
+
+    files_written: int = field(default=0)
+    files_skipped: int = field(default=0)
+    api_calls_made: int = field(default=0)
+    bytes_written: int = field(default=0)
+    errors_encountered: int = field(default=0)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    def increment(self, field_name: str, amount: int = 1) -> None:
+        """Atomically increment a named counter."""
+        with self._lock:
+            setattr(self, field_name, getattr(self, field_name) + amount)
+
+    def reset(self) -> None:
+        """Reset all counters to zero."""
+        with self._lock:
+            self.files_written = 0
+            self.files_skipped = 0
+            self.api_calls_made = 0
+            self.bytes_written = 0
+            self.errors_encountered = 0
+
+    def to_dict(self) -> dict[str, int]:
+        """Return a snapshot dict for use in summaries."""
+        with self._lock:
+            return {
+                "files_written": self.files_written,
+                "files_skipped": self.files_skipped,
+                "api_calls_made": self.api_calls_made,
+                "bytes_written": self.bytes_written,
+                "errors_encountered": self.errors_encountered,
+            }
 
 
 class F1DataIngestor:
@@ -91,7 +134,7 @@ class F1DataIngestor:
         )
 
         # Initialize stats tracking
-        self._reset_stats()
+        self.stats = IngestorStats()
 
         # Validate connection if requested
         if validate_connection:
@@ -111,18 +154,12 @@ class F1DataIngestor:
         except Exception as e:
             logger.error(f"❌ Infrastructure validation failed: {e}")
             raise RuntimeError(
-                "Cannot connect to MinIO. Ensure docker-compose services are running."
+                f"Cannot connect to MinIO ({e}). Ensure docker-compose services are running."
             ) from e
 
     def _reset_stats(self) -> None:
         """Reset statistics counters to initial state."""
-        self.stats = {
-            "files_written": 0,
-            "files_skipped": 0,
-            "api_calls_made": 0,
-            "bytes_written": 0,
-            "errors_encountered": 0,
-        }
+        self.stats.reset()
 
     def _generate_path(
         self,
@@ -137,9 +174,9 @@ class F1DataIngestor:
         """
         path_parts = ["ergast", f"endpoint={endpoint}"]
 
-        if season:
+        if season is not None:
             path_parts.append(f"season={season}")
-        if round_num:
+        if round_num is not None:
             path_parts.append(f"round={int(round_num):02d}")
 
         path_parts.append(f"batch_id={batch_id}")
@@ -148,6 +185,18 @@ class F1DataIngestor:
         filename = f"page_{page:03d}.json"
 
         return "/".join(path_parts) + "/" + filename
+
+    @staticmethod
+    def _check_for_items(obj: Any, _depth: int = 0) -> bool:
+        """Recursively check whether obj contains any non-empty list."""
+        if _depth > 20:
+            # Guard against pathological nesting / adversarial input.
+            return False
+        if isinstance(obj, list) and len(obj) > 0:
+            return True
+        if isinstance(obj, dict):
+            return any(F1DataIngestor._check_for_items(v, _depth + 1) for v in obj.values())
+        return False
 
     def _get_existing_keys(
         self,
@@ -162,9 +211,9 @@ class F1DataIngestor:
         # Build prefix for listing
         prefix_parts = ["ergast", f"endpoint={endpoint}"]
 
-        if season:
+        if season is not None:
             prefix_parts.append(f"season={season}")
-        if round_num:
+        if round_num is not None:
             prefix_parts.append(f"round={int(round_num):02d}")
 
         prefix_parts.append(f"batch_id={batch_id}")
@@ -176,7 +225,12 @@ class F1DataIngestor:
             logger.debug(f"Found {len(existing_keys)} existing files for prefix: {prefix}")
             return set(existing_keys)
         except Exception as e:
-            logger.warning(f"Failed to list existing objects: {e}. Will check individually.")
+            error_code = getattr(getattr(e, "response", {}), "get", lambda *_: None)("Error", {}).get("Code", "")
+            if error_code in ("403", "AccessDenied"):
+                # Permission errors are infrastructure problems — don't silently swallow.
+                logger.error(f"❌ Access denied listing objects (prefix={prefix}): {e}")
+                raise
+            logger.warning(f"Failed to list existing objects: {e}. Falling back to per-key HEAD checks.")
             return set()
 
     def _save_to_minio(self, data: dict[str, Any], path: str, metadata: dict[str, Any]) -> None:
@@ -200,11 +254,11 @@ class F1DataIngestor:
 
         try:
             self.store.put_object(path, envelope, metadata=s3_metadata)
-            self.stats["files_written"] += 1
-            if self.stats["files_written"] % 10 == 0:
-                logger.debug(f"Snapshot: {self.stats}")
+            self.stats.increment("files_written")
+            if self.stats.files_written % 10 == 0:
+                logger.debug(f"Snapshot: {self.stats.to_dict()}")
         except Exception as e:
-            self.stats["errors_encountered"] += 1
+            self.stats.increment("errors_encountered")
             logger.error(f"❌ Failed to save {path}: {e}")
             raise
 
@@ -222,23 +276,25 @@ class F1DataIngestor:
         params = {"limit": limit, "offset": offset}
 
         try:
-            # logger.debug(f"📡 GET {url} | limit={limit} offset={offset}")
             response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
 
-            self.stats["api_calls_made"] += 1
+            self.stats.increment("api_calls_made")
             data: dict[str, Any] = response.json()
 
             return data
 
         except RequestException as e:
+            # Note: do NOT increment errors_encountered here — this function is decorated
+            # with @retry and will be called up to RETRY_MAX_ATTEMPTS times per logical
+            # request. The caller (_fetch_and_save_page) increments errors_encountered
+            # once at the page level after all retries are exhausted.
             logger.error(f"❌ API request failed: {e}")
-            self.stats["errors_encountered"] += 1
             raise
 
         except ValueError as e:
             logger.error(f"❌ Invalid JSON response: {e}")
-            self.stats["errors_encountered"] += 1
+            self.stats.increment("errors_encountered")
             raise
 
     def _fetch_and_save_page(
@@ -262,10 +318,10 @@ class F1DataIngestor:
                 # Check provided batch set or fallback to individual check
                 if existing_keys is not None:
                     if s3_key in existing_keys:
-                        self.stats["files_skipped"] += 1
+                        self.stats.increment("files_skipped")
                         return (True, 0)
                 elif self.store.object_exists(s3_key):
-                    self.stats["files_skipped"] += 1
+                    self.stats.increment("files_skipped")
                     return (True, 0)
 
             response_data = self.fetch_page(full_url, limit, offset)
@@ -289,18 +345,7 @@ class F1DataIngestor:
             if total_records > 0:
                 # Ergast wraps data in MRData -> [Endpoint]Table -> [Item]s.
                 # If the API claims total > 0 but returns no list items, the response is corrupt.
-                def check_for_items(obj: Any, _depth: int = 0) -> bool:
-                    """Recursively check whether obj contains any non-empty list."""
-                    if _depth > 20:
-                        # Guard against pathological nesting / adversarial input.
-                        return False
-                    if isinstance(obj, list) and len(obj) > 0:
-                        return True
-                    if isinstance(obj, dict):
-                        return any(check_for_items(v, _depth + 1) for v in obj.values())
-                    return False
-
-                if not check_for_items(mr_data):
+                if not self._check_for_items(mr_data):
                     raise DataCorruptionError(
                         f"Silent Data Corruption: API reported total={total_records} "
                         f"but returned an empty data payload for '{endpoint_name}' page {page}."
@@ -315,7 +360,7 @@ class F1DataIngestor:
             raise
         except Exception as e:
             logger.error(f"Failed processing {endpoint_name} page {page}: {e}", exc_info=True)
-            self.stats["errors_encountered"] += 1
+            self.stats.increment("errors_encountered")
             return (False, 0)
 
     def ingest_endpoint(
@@ -377,7 +422,7 @@ class F1DataIngestor:
                 force_refresh=force_refresh,
             )
             if not first_page_success:
-                raise Exception(f"Failed to fetch first page of {endpoint_name}")
+                raise RuntimeError(f"Failed to fetch first page of {endpoint_name}")
         except Exception as e:
             logger.error(f"❌ Failed to init ingestion for {endpoint_name}: {e}")
             raise
@@ -434,7 +479,7 @@ class F1DataIngestor:
                     except Exception as e:
                         logger.error(f"Page {page} exception: {e}")
         else:
-            # Sequential fallback (optimized)
+            # Sequential fallback
             existing_keys = set()
             if not force_refresh:
                 existing_keys = self._get_existing_keys(endpoint_name, batch_id, season, round_num)
@@ -444,7 +489,7 @@ class F1DataIngestor:
                 s3_key = self._generate_path(endpoint_name, batch_id, season, round_num, page)
 
                 if not force_refresh and s3_key in existing_keys:
-                    self.stats["files_skipped"] += 1
+                    self.stats.increment("files_skipped")
                     continue
 
                 self._fetch_and_save_page(
@@ -457,6 +502,7 @@ class F1DataIngestor:
                     limit,
                     offset,
                     force_refresh,
+                    existing_keys,  # pass the pre-fetched set so workers don't HEAD individually
                 )
 
         logger.info(f"✅ Completed {endpoint_name}")
@@ -497,9 +543,13 @@ class F1DataIngestor:
         try:
             logger.info(f"📖 Reading race calendar from Bronze: {races_key}")
             races_envelope = self.store.get_json(races_key)
-            races_list: list[dict[str, Any]] = races_envelope["data"]["MRData"]["RaceTable"][
-                "Races"
-            ]
+            races_list: list[dict[str, Any]] = (
+                races_envelope
+                .get("data", {})
+                .get("MRData", {})
+                .get("RaceTable", {})
+                .get("Races", [])
+            )
             logger.info("✅ Successfully read race calendar from Bronze")
         except Exception as e:
             # Invariant: Phase 2 already ingested races successfully (or would have raised),
@@ -509,7 +559,8 @@ class F1DataIngestor:
                 f"❌ Failed to read race calendar from Bronze (unexpected — data should exist): {e}\n"
                 f"   Falling back to direct API call to unblock Phase 4..."
             )
-            schedule_url = f"{self.base_url}/{season}.json"
+            schedule_pattern = ENDPOINT_CONFIG["races"]["url_pattern"]
+            schedule_url = f"{self.base_url}/{schedule_pattern.format(season=season)}"
             schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
             races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
 
@@ -642,12 +693,13 @@ class F1DataIngestor:
         Generate extraction summary with statistics.
         """
         duration = (datetime.now() - start_time).total_seconds()
+        stats_snapshot = self.stats.to_dict()
 
         summary: dict[str, Any] = {
-            "status": "SUCCESS" if self.stats["errors_encountered"] == 0 else "PARTIAL",
+            "status": "SUCCESS" if self.stats.errors_encountered == 0 else "PARTIAL",
             "duration_seconds": round(duration, 2),
             "duration_minutes": round(duration / 60, 2),
-            **self.stats,
+            **stats_snapshot,
         }
 
         if phase_timings:
@@ -658,10 +710,10 @@ class F1DataIngestor:
             f"✅ Extraction Complete\n"
             f"   Status: {summary['status']}\n"
             f"   Duration: {duration:.2f}s ({duration / 60:.1f}m)\n"
-            f"   Files Written: {self.stats['files_written']}\n"
-            f"   Files Skipped: {self.stats['files_skipped']}\n"
-            f"   API Calls: {self.stats['api_calls_made']}\n"
-            f"   Errors: {self.stats['errors_encountered']}\n"
+            f"   Files Written: {self.stats.files_written}\n"
+            f"   Files Skipped: {self.stats.files_skipped}\n"
+            f"   API Calls: {self.stats.api_calls_made}\n"
+            f"   Errors: {self.stats.errors_encountered}\n"
         )
 
         if phase_timings:
