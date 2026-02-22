@@ -128,6 +128,7 @@ class FastestLapSchema(F1BaseModel):
 
 # --- Event Schemas ---
 
+
 class RaceSchema(F1BaseModel):
     """Validation schema for a Race schedule/event entity."""
 

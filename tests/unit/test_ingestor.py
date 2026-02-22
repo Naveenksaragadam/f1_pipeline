@@ -196,7 +196,7 @@ def test_silent_data_corruption_exception(
     success, count = ingestor._fetch_and_save_page(
         "races", "b1", "url", 2024, None, 1, 10, 0, False
     )
-    
+
     # It should fail and return (False, 0)
     assert not success
     assert count == 0

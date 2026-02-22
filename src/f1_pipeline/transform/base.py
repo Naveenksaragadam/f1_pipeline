@@ -90,7 +90,6 @@ class F1Transformer:
         if df.is_empty():
             raise ValueError("Data Quality Error: Transformation resulted in an empty DataFrame.")
 
-
         # 6. Write to Parquet
         logger.info(f"💾 Writing {df.height} rows to Silver Layer: {target_key}")
 
