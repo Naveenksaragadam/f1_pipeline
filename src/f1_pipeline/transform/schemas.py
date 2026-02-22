@@ -4,7 +4,7 @@ Defines the Pydantic models used for data validation, cleaning, and
 type enforcement during the Silver layer transformation.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated, List, Optional
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -25,6 +25,43 @@ class F1BaseModel(BaseModel):
         frozen=True,  # Models are immutable (Functional programming style)
     )
 
+
+# --- Reference Entities ---
+
+class SeasonSchema(F1BaseModel):
+    """Validation schema for Formula 1 Season entities."""
+
+    season: int = Field(description="The calendar year of the season (e.g., 2024)")
+    url: str = Field(description="Wikipedia URL for the season")
+
+
+class LocationSchema(F1BaseModel):
+    """Geographic coordinates and locality for an F1 venue."""
+
+    lat: float = Field(description="Latitude of the circuit")
+    long: float = Field(description="Longitude of the circuit")
+    locality: str = Field(description="City or town where the circuit is located")
+    country: CleanStr = Field(description="Country where the circuit is located")
+
+
+class CircuitSchema(F1BaseModel):
+    """Validation schema for Formula 1 Circuit entities."""
+
+    circuit_id: str = Field(alias="circuitId", description="Technical identifier (e.g., 'spa')")
+    name: str = Field(alias="circuitName", description="Official circuit name")
+    url: str = Field(description="Wikipedia URL for the circuit")
+    location: LocationSchema = Field(alias="Location", description="Geographic location details")
+
+
+class StatusSchema(F1BaseModel):
+    """Validation schema for race finishing status codes."""
+
+    status_id: int = Field(alias="statusId", description="Unique status identifier")
+    status: str = Field(description="Human-readable status (e.g., 'Finished', 'Engine')")
+    count: int = Field(description="Number of occurrences (used in some endpoint aggregations)")
+
+
+# --- Actor Entities ---
 
 class DriverSchema(F1BaseModel):
     """Validation schema for Formula 1 Driver entities."""
@@ -49,6 +86,8 @@ class ConstructorSchema(F1BaseModel):
     nationality: CleanStr = Field(alias="nationality", description="Standardized team nationality")
     url: str = Field(alias="url", description="Wikipedia URL for the constructor")
 
+
+# --- Performance Entities (Shared) ---
 
 class TimeSchema(F1BaseModel):
     """Represents a time duration or timestamp in race sessions."""
@@ -75,11 +114,10 @@ class FastestLapSchema(F1BaseModel):
     )
 
 
+# --- Event Schemas ---
+
 class ResultSchema(F1BaseModel):
-    """
-    Validation schema for a single Race Result record.
-    This model acts as the root for a single row in the Results final table.
-    """
+    """Validation schema for a single Race Result record."""
 
     number: Optional[int] = Field(None, description="The car number used in the race")
     position: Optional[int] = Field(None, description="Final race finishing position")
@@ -93,3 +131,77 @@ class ResultSchema(F1BaseModel):
     fastest_lap: Optional[FastestLapSchema] = Field(
         None, alias="FastestLap", description="Details for the fastest lap, if available"
     )
+
+
+class QualifyingSchema(F1BaseModel):
+    """Validation schema for Qualifying session results."""
+
+    number: int = Field(description="The car number")
+    position: int = Field(description="Qualifying rank (1 = Pole Position)")
+    driver: DriverSchema = Field(alias="Driver", description="Driver profile")
+    constructor: ConstructorSchema = Field(alias="Constructor", description="Constructor profile")
+    q1: Optional[str] = Field(None, alias="Q1", description="Fastest lap in Q1 session")
+    q2: Optional[str] = Field(None, alias="Q2", description="Fastest lap in Q2 session")
+    q3: Optional[str] = Field(None, alias="Q3", description="Fastest lap in Q3 session")
+
+
+class SprintSchema(F1BaseModel):
+    """Validation schema for Sprint race results."""
+
+    number: int = Field(description="The car number")
+    position: int = Field(description="Final finishing position in the Sprint")
+    points: float = Field(description="Points awarded for the Sprint finish")
+    grid: int = Field(description="Starting grid position for the Sprint")
+    laps: int = Field(description="Laps completed in the Sprint")
+    driver: DriverSchema = Field(alias="Driver", description="Driver profile")
+    constructor: ConstructorSchema = Field(alias="Constructor", description="Constructor profile")
+    status: str = Field(description="Finishing status")
+    time: Optional[TimeSchema] = Field(None, alias="Time", description="Total time for finishers")
+
+
+class PitStopSchema(F1BaseModel):
+    """Validation schema for a single Pit Stop event."""
+
+    driver_id: str = Field(alias="driverId", description="Identifier of the driver stopping")
+    lap: int = Field(description="The lap number on which the stop occurred")
+    stop: int = Field(description="The sequence number for this stop (e.g., 1st stop, 2nd stop)")
+    time: str = Field(description="The time of day when the stop occurred (e.g., 15:02:11)")
+    duration: float = Field(description="The time spent in the pits (in seconds)")
+
+
+class LapTimingSchema(F1BaseModel):
+    """Validation schema for a single driver's timing during a specific lap."""
+
+    driver_id: str = Field(alias="driverId", description="Identifier of the driver")
+    position: int = Field(description="Track position on this lap")
+    time: str = Field(description="Lap time (e.g., '1:21.345')")
+
+
+class LapSchema(F1BaseModel):
+    """Higher-order schema for a full lap's worth of timings."""
+
+    number: int = Field(description="The lap number")
+    timings: List[LapTimingSchema] = Field(alias="Timings", description="List of driver timings for this lap")
+
+
+# --- Standing Schemas ---
+
+class DriverStandingSchema(F1BaseModel):
+    """Validation schema for Driver Championship standings."""
+
+    position: int = Field(description="Current standing position")
+    points: float = Field(description="Total points accumulated")
+    wins: int = Field(description="Total race wins in the season")
+    driver: DriverSchema = Field(alias="Driver", description="Driver profile")
+    constructors: List[ConstructorSchema] = Field(
+        alias="Constructors", description="The team(s) the driver has represented"
+    )
+
+
+class ConstructorStandingSchema(F1BaseModel):
+    """Validation schema for Constructor Championship standings."""
+
+    position: int = Field(description="Current standing position")
+    points: float = Field(description="Total points accumulated")
+    wins: int = Field(description="Total race wins in the season")
+    constructor: ConstructorSchema = Field(alias="Constructor", description="Constructor profile")

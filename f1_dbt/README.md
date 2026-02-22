@@ -1,15 +1,30 @@
-Welcome to your new dbt project!
+# F1 Gold Layer (dbt)
 
-### Using the starter project
+This directory contains the dbt project for the Formula 1 data platform. It is responsible for transforming the Silver Layer (Parquet files in MinIO) into analytical Gold Layer models in ClickHouse.
 
-Try running the following commands:
-- dbt run
-- dbt test
+## 🚀 Orchestration
 
+In this project, dbt is **not** run as a standalone container. Instead, it is orchestrated by **Apache Airflow 3.x** using **Astronomer Cosmos**.
 
-### Resources:
-- Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
-- Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
-- Join the [chat](https://community.getdbt.com/) on Slack for live discussions and support
-- Find [dbt events](https://events.getdbt.com) near you
-- Check out [the blog](https://blog.getdbt.com/) for the latest news on dbt's development and best practices
+* **Granular Visibility**: Each dbt model is rendered as a separate task in the Airflow UI.
+* **Native Execution**: Tasks run within the Airflow worker context, eliminating the need for a separate dbt runner service.
+
+## 🏗️ Project Structure
+
+* `models/bronze`: Staging models that interface with MinIO via ClickHouse S3 engine.
+* `models/silver`: Intermediate models for deduplication and cleaning.
+* `models/gold`: Final Fact and Dimension tables for Dashboards.
+
+## 🛠️ Usage
+
+While Airflow handles production runs, you can still develop locally:
+
+```bash
+# Inside f1_dbt directory
+dbt run --select models/gold
+dbt test
+```
+
+## 🔐 Credentials
+
+Credentials are managed via `profiles.yml` which uses environment variables passed from Docker Compose/Airflow.

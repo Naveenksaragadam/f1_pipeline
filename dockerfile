@@ -1,5 +1,4 @@
-# 1. Use a stable version 
-FROM apache/airflow:2.10.3
+FROM apache/airflow:3.1.7
 
 # 2. Switch to root to copy the requirements file
 USER root

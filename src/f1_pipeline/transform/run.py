@@ -1,6 +1,6 @@
 """
 F1 Silver Layer Backfill Utility
-Standalone maintenance script to transform a full season of data 
+Standalone maintenance script to transform full season data 
 from the Bronze (raw) layer to the Silver (clean) layer.
 """
 
@@ -33,7 +33,7 @@ def run_backfill(season: int = 2024) -> None:
     """
     logger.info(f"🚀 Starting Silver Layer Backfill for Season {season}...")
 
-    # 1. Initialize Object Stores with Production Config
+    # 1. Initialize Object Stores
     bronze_store = F1ObjectStore(
         bucket_name=MINIO_BUCKET_BRONZE,
         endpoint_url=MINIO_ENDPOINT,
@@ -48,33 +48,37 @@ def run_backfill(season: int = 2024) -> None:
         secret_key=MINIO_SECRET_KEY,
     )
 
-    # Ensure target environment is ready
     silver_store.create_bucket_if_not_exists()
 
-    # 2. Sequential Processing of Endpoints
-    # We use the factory to iterate through all registered entities (drivers, results, etc.)
-    for endpoint, schema in TRANSFORM_FACTORY.items():
-        logger.info(f"📁 Processing endpoint: {endpoint}")
+    # Define endpoints that do not use season-level partitioning in Bronze
+    GLOBAL_ENDPOINTS = ["seasons", "status"]
 
-        # Dependency Injection: Feed the specific schema into the transformer
+    # 2. Sequential Processing
+    for endpoint, schema in TRANSFORM_FACTORY.items():
+        logger.info(f"📁 Starting transformation for endpoint: {endpoint.upper()}")
+
+        # Dependency Injection
         transformer = F1Transformer(
             bronze_store=bronze_store, silver_store=silver_store, schema_class=schema
         )
 
-        # Standard partitioning: ergast/endpoint={endpoint}/season={season}/
-        prefix = f"ergast/endpoint={endpoint}/season={season}/"
+        # Route to correct Bronze prefix
+        if endpoint in GLOBAL_ENDPOINTS:
+            prefix = f"ergast/endpoint={endpoint}/"
+        else:
+            prefix = f"ergast/endpoint={endpoint}/season={season}/"
 
         try:
-            # 3. Discovery Phase
+            # 3. Discovery
             source_objects = bronze_store.list_objects(prefix=prefix)
 
             if not source_objects:
                 logger.warning(f"  ⚠️ No raw data found for prefix: {prefix}")
                 continue
 
-            logger.info(f"  📂 Found {len(source_objects)} objects to process.")
+            logger.info(f"  📂 Found {len(source_objects)} source objects.")
 
-            # 4. Transformation Phase
+            # 4. Transformation
             success_count = 0
             for source_key in source_objects:
                 try:
@@ -83,18 +87,17 @@ def run_backfill(season: int = 2024) -> None:
                     transformer.process_object(source_key, target_key)
                     success_count += 1
                 except Exception as e:
-                    logger.error(f"  ❌ Transformation failed for {source_key}: {e}")
+                    logger.error(f"  ❌ Failed {source_key}: {e}")
 
             logger.info(
-                f"  ✅ Completed {endpoint}: {success_count}/{len(source_objects)} files synced."
+                f"  ✅ Completed {endpoint}: {success_count}/{len(source_objects)} synced."
             )
 
         except Exception as e:
-            logger.error(f"  ❌ Critical error while processing {endpoint}: {e}")
+            logger.error(f"  ❌ Critical failure for {endpoint}: {e}")
 
-    logger.info("✨ Backfill synchronized successfully!")
+    logger.info("✨ Backfill operation completed successfully!")
 
 
 if __name__ == "__main__":
-    # Default to 2024 for the current project phase
     run_backfill(2024)
