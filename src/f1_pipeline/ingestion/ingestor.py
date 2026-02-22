@@ -38,6 +38,7 @@ from ..config import (
     MINIO_BUCKET_BRONZE,
     MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
+    REQUEST_TIMEOUT,
     RETRY_MAX_ATTEMPTS,
     RETRY_MAX_WAIT,
     RETRY_MIN_WAIT,
@@ -359,7 +360,10 @@ class F1DataIngestor:
             f"Workers: {max_workers}"
         )
 
-        # STEP 1: Always fetch first page to determine total records
+        # STEP 1: Always fetch first page to determine total records.
+        # Note: page 1 deliberately uses an individual object_exists() HEAD check
+        # (via existing_keys=None) rather than a batch LIST. A batch LIST would cost
+        # more than a single HEAD for endpoints with only one page.
         try:
             first_page_success, total_records = self._fetch_and_save_page(
                 endpoint_name,
@@ -419,12 +423,14 @@ class F1DataIngestor:
                     )
                     futures.append((page, future))
 
-                # Check results
+                # Check results — apply timeout to prevent indefinite hangs
                 for page, future in futures:
                     try:
-                        success, _ = future.result()
+                        success, _ = future.result(timeout=REQUEST_TIMEOUT)
                         if not success:
                             logger.warning(f"Page {page} failed")
+                    except TimeoutError:
+                        logger.error(f"Page {page} timed out after {REQUEST_TIMEOUT}s")
                     except Exception as e:
                         logger.error(f"Page {page} exception: {e}")
         else:

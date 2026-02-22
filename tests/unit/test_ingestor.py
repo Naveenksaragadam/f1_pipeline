@@ -263,6 +263,27 @@ def test_ingest_concurrent_worker_failure(
             ingestor.ingest_endpoint("drivers", "b1", season=2024, max_workers=3)
 
 
+def test_ingest_concurrent_worker_timeout(
+    ingestor: F1DataIngestor, mock_session: MagicMock
+) -> None:
+    """Test that TimeoutError from a hung page is logged but does not crash the run."""
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "50", "table": {"items": [{"id": 1}]}}
+    }
+
+    with patch("f1_pipeline.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
+        mock_executor_instance = MockExecutor.return_value.__enter__.return_value
+
+        mock_future_timeout = MagicMock()
+        mock_future_timeout.result.side_effect = TimeoutError("timed out")
+
+        mock_executor_instance.submit.return_value = mock_future_timeout
+
+        with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
+            # Should NOT raise — TimeoutError is caught and logged
+            ingestor.ingest_endpoint("drivers", "b1", season=2024, max_workers=3)
+
+
 def test_ingest_sequential_skipping(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test skipping files in sequential ingestion."""
     mock_session.get.return_value.json.return_value = {
