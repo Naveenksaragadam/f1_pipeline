@@ -71,6 +71,7 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.0.0",
     "types-requests",
+    "pip-audit>=2.10.0",
 ]
 
 [tool.coverage.run]
