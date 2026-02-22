@@ -17,11 +17,6 @@ def test_get_env_required_success() -> None:
         assert config.get_env_required("TEST_KEY") == "test_value"
 
 
-def test_get_env_required_default() -> None:
-    """Test get_env_required with missing variable and default."""
-    with patch("os.getenv", return_value="default"):
-        assert config.get_env_required("TEST_KEY", default="default") == "default"
-
 
 def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
     """Test module initialization when .env is not found (covers line 21)."""
@@ -51,50 +46,48 @@ def test_validate_configuration_explicit_call(caplog: pytest.LogCaptureFixture) 
 
 
 def test_get_env_required_failure() -> None:
-    """Test get_env_required with missing variable and no default."""
+    """Test get_env_required with missing variable."""
     with patch("os.getenv", return_value=None):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.get_env_required("MISSING_KEY")
-        assert excinfo.value.code == 1
+        assert "Required environment variable 'MISSING_KEY' is not set" in str(excinfo.value)
 
 
 def test_validate_configuration_missing_access_key() -> None:
     """Test validation failure when MINIO_ACCESS_KEY is missing."""
     with patch("f1_pipeline.config.MINIO_ACCESS_KEY", ""):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
-        assert excinfo.value.code == 1
+        assert "MINIO_ACCESS_KEY is not set" in str(excinfo.value)
 
 
 def test_validate_configuration_missing_secret_key() -> None:
     """Test validation failure when MINIO_SECRET_KEY is missing."""
     with patch("f1_pipeline.config.MINIO_SECRET_KEY", None):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
-        assert excinfo.value.code == 1
+        assert "MINIO_SECRET_KEY is not set" in str(excinfo.value)
 
 
 def test_validate_configuration_empty_endpoints() -> None:
     """Test validation failure when ENDPOINT_CONFIG is empty."""
     with patch("f1_pipeline.config.ENDPOINT_CONFIG", {}):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
-        assert excinfo.value.code == 1
+        assert "ENDPOINT_CONFIG is empty" in str(excinfo.value)
 
 
-def test_validate_configuration_bad_endpoint() -> None:
-    """Test validation failure with malformed endpoint config."""
     bad_config = {"bad": {"group": "error"}}  # Missing url_pattern
     with patch("f1_pipeline.config.ENDPOINT_CONFIG", bad_config):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
-        assert excinfo.value.code == 1
+        assert "missing url_pattern" in str(excinfo.value)
 
     bad_config = {"bad": {"url_pattern": "test"}}  # Missing group
     with patch("f1_pipeline.config.ENDPOINT_CONFIG", bad_config):
-        with pytest.raises(SystemExit) as excinfo:
+        with pytest.raises(EnvironmentError) as excinfo:
             config.validate_configuration()
-        assert excinfo.value.code == 1
+        assert "missing group" in str(excinfo.value)
 
 
 def test_concurrency_config(mock_env: dict[str, str]) -> None:
