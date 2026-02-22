@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 import polars as pl
+from pydantic import ValidationError
 
 from f1_pipeline.minio.object_store import F1ObjectStore
 from f1_pipeline.transform.schemas import F1BaseModel
@@ -29,6 +30,7 @@ class F1Transformer:
         bronze_store: F1ObjectStore,
         silver_store: F1ObjectStore,
         schema_class: type[F1BaseModel],
+        error_threshold: float = 0.20,
     ):
         """
         Initialize the transformer with storage interfaces and a target schema.
@@ -37,10 +39,14 @@ class F1Transformer:
             bronze_store: Object store instance for the raw source bucket.
             silver_store: Object store instance for the transformed target bucket.
             schema_class: Pydantic model class to use for record validation.
+            error_threshold: Maximum fraction of records that may fail validation
+                before the pipeline aborts. Defaults to 0.20 (20%). Set lower for
+                small batches (e.g. qualifying/standings) where any failure is suspicious.
         """
         self.bronze_store = bronze_store
         self.silver_store = silver_store
         self.schema_class = schema_class
+        self.error_threshold = error_threshold
 
     def process_object(self, source_key: str, target_key: str) -> None:
         """
@@ -114,40 +120,24 @@ class F1Transformer:
         """
         data_root = raw_data.get("data", {}).get("MRData", raw_data)
 
-        def find_candidate_lists(obj: Any) -> list[list[Any]]:
-            """Returns all lists found in the object tree."""
-            candidates = []
-            if isinstance(obj, list):
-                candidates.append(obj)
-                for item in obj:
-                    candidates.extend(find_candidate_lists(item))
-            elif isinstance(obj, dict):
+        def _find_first_list_of_dicts(obj: Any) -> list[dict[str, Any]] | None:
+            """Recursively find the first list whose first element is a dict.
+
+            Returns early on the first match — avoids allocating all nested lists
+            upfront. The outermost list of dicts is always our target because our
+            Pydantic schemas handle internal nesting (e.g., LapSchema contains Timings).
+            """
+            if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+                return obj  # type: ignore[return-value]
+            if isinstance(obj, dict):
                 for value in obj.values():
-                    candidates.extend(find_candidate_lists(value))
-            return candidates
+                    result = _find_first_list_of_dicts(value)
+                    if result is not None:
+                        return result
+            return None
 
-        # Intelligent Search: We want the list that is MOST LIKELY our data records.
-        # Heuristic: Find all lists, and choose the one whose items best match our schema,
-        # OR simply the one that isn't wrapped in another list (to avoid returning 'Timings'
-        # when we want 'Laps').
-
-        all_lists = find_candidate_lists(data_root)
-        if not all_lists:
-            return []
-
-        # For endpoints like 'laps', we have Laps (list) -> Timings (list).
-        # We generally want the HIGHEST level list that contains dicts.
-        # Why? Because our Pydantic schemas are designed to handle the nesting
-        # and then we explode/flatten in Polars.
-        for lst in all_lists:
-            if lst and isinstance(lst[0], dict):
-                # If the first item of this list contains another list,
-                # it's a parent list (like 'Laps' containing 'Timings').
-                # In our new architecture, we WANT this parent list because
-                # LapSchema handles the 'Timings' list internally.
-                return lst
-
-        return []
+        result = _find_first_list_of_dicts(data_root)
+        return result if result is not None else []
 
     def process_batch(self, records: list[dict[str, Any]]) -> pl.DataFrame:
         """
@@ -164,7 +154,7 @@ class F1Transformer:
             try:
                 validated_obj = self.schema_class.model_validate(record)
                 valid_items.append(validated_obj.model_dump(by_alias=False))
-            except Exception as e:
+            except ValidationError as e:
                 error_details.append(f"Record {i}: {str(e)}")
                 if len(error_details) <= 3:
                     logger.debug(f"❌ Validation failure on record {i}: {e}")
@@ -178,9 +168,10 @@ class F1Transformer:
                 f"({error_rate:.1%})"
             )
 
-            # Failure Threshold: Crash if > 20% fails, or if it's a small batch with multiple errors
-            # This ensures we don't proceed with significantly broken data.
-            if error_rate > 0.20 or (total_count < 5 and error_count > 0):
+            # Failure Threshold: Crash if above the configured threshold, or if it's a
+            # small batch with any errors (small batches like qualifying/standings have
+            # fewer records and any failure is suspicious).
+            if error_rate > self.error_threshold or (total_count < 5 and error_count > 0):
                 logger.error("🛑 Error threshold exceeded! First 3 errors:")
                 for err in error_details[:3]:
                     logger.error(f"   - {err}")
