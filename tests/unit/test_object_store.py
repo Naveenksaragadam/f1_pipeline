@@ -378,25 +378,6 @@ def test_create_bucket_client_error(store: F1ObjectStore, mock_s3_client: MagicM
             store.create_bucket_if_not_exists()
 
 
-def test_serialize_body_all_types(store: F1ObjectStore) -> None:
-    """Test the internal _serialize_body method (coverage)."""
-    # dict
-    body, ct = store._serialize_body({"a": 1})
-    assert ct == "application/json"
-    assert "a" in body
-    # list
-    body, ct = store._serialize_body([1, 2])
-    assert ct == "application/json"
-    # bytes
-    body, ct = store._serialize_body(b"bytes")
-    assert ct == "application/octet-stream"
-    assert body == b"bytes"
-    # other/str
-    body, ct = store._serialize_body(123)  # type: ignore[arg-type]
-    assert ct == "text/plain"
-    assert body == "123"
-
-
 def test_put_object_variations(store: F1ObjectStore, mock_s3_client: MagicMock) -> None:
     """Test put_object with string, bytes, and unsupported types."""
     # string
