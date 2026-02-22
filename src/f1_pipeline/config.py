@@ -5,7 +5,6 @@ Loads environment variables and defines endpoint specifications.
 
 import logging
 import os
-import sys
 from typing import TypedDict
 
 from dotenv import find_dotenv, load_dotenv
@@ -37,7 +36,7 @@ def get_env_required(key: str) -> str:
     """
     value = os.getenv(key)
     if value is None:
-        raise EnvironmentError(
+        raise OSError(
             f"Required environment variable '{key}' is not set. "
             "Check your .env file or docker-compose environment section."
         )
@@ -242,7 +241,7 @@ def validate_configuration() -> bool:
     if errors:
         error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
         logger.error(f"❌ {error_msg}")
-        raise EnvironmentError(error_msg)
+        raise OSError(error_msg)
 
     logger.info("✅ Configuration validation passed")
     return True

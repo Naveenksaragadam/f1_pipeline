@@ -223,6 +223,7 @@ def test_process_object_empty_records(mock_stores: tuple[MagicMock, MagicMock]) 
 
     silver_store.put_object.assert_not_called()
 
+
 def test_process_batch_custom_threshold(mock_stores: tuple[MagicMock, MagicMock]) -> None:
     """Test that custom error threshold is respected."""
     bronze, silver = mock_stores
