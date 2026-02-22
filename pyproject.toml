@@ -73,6 +73,9 @@ dev = [
     "types-requests",
 ]
 
+[tool.coverage.run]
+omit = ["src/f1_pipeline/**/__init__.py"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/f1_pipeline"]
 

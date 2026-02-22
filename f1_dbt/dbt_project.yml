@@ -48,8 +48,8 @@ models:
 vars:
   # MinIO connection
   minio_endpoint: "http://minio:9000"
-  minio_access_key: "{{ env_var('MINIO_ACCESS_KEY', 'minioadmin') }}"
-  minio_secret_key: "{{ env_var('MINIO_SECRET_KEY', 'password') }}"
+  minio_access_key: "{{ env_var('MINIO_ACCESS_KEY') }}"
+  minio_secret_key: "{{ env_var('MINIO_SECRET_KEY') }}"
   
   # S3 buckets
   bronze_bucket: "bronze"
