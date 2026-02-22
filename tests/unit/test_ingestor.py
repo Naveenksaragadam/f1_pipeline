@@ -1,8 +1,10 @@
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import logging
 import pytest
 import requests
+from botocore.exceptions import ClientError
 
 from f1_pipeline.ingestion.ingestor import F1DataIngestor
 
@@ -417,3 +419,26 @@ def test_race_calendar_bronze_fallback(ingestor: F1DataIngestor, mock_session: M
 
     args, _ = mock_session.get.call_args
     assert "2024.json" in args[0]
+
+
+def test_get_existing_keys_access_denied(ingestor: F1DataIngestor) -> None:
+    """Test that 403 AccessDenied from listing objects is re-raised."""
+    error_response = {"Error": {"Code": "403", "Message": "Forbidden"}}
+    ingestor.store.list_objects.side_effect = ClientError(error_response, "ListObjectsV2")
+
+    with pytest.raises(ClientError) as excinfo:
+        ingestor._get_existing_keys("drivers", "b1", 2024, None)
+    assert excinfo.value.response["Error"]["Code"] == "403"
+
+
+def test_get_existing_keys_generic_error(
+    ingestor: F1DataIngestor, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that generic errors during listing objects are caught and return empty set."""
+    ingestor.store.list_objects.side_effect = Exception("Generic S3 error")
+
+    with caplog.at_level(logging.WARNING):
+        keys = ingestor._get_existing_keys("drivers", "b1", 2024, None)
+
+    assert keys == set()
+    assert "Failed to list existing objects: Generic S3 error" in caplog.text
