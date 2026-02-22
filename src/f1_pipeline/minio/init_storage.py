@@ -22,15 +22,12 @@ def initialize_buckets() -> None:
     """
     buckets_to_create = [MINIO_BUCKET_BRONZE, MINIO_BUCKET_SILVER, MINIO_BUCKET_GOLD]
 
-    # We reuse your existing class!
-    base_store = F1ObjectStore(
-        bucket_name="base",  # Dummy name, we just want the client
+    # Reuse a single shared client across all bucket operations.
+    shared_client = F1ObjectStore.create_client(
         endpoint_url=MINIO_ENDPOINT,
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
     )
-    ## Extract the client to reuse it
-    shared_client = base_store.client
 
     logger.info("🚀 Starting Storage Initialization...")
 

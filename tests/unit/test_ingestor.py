@@ -82,59 +82,30 @@ def test_save_to_minio_error(ingestor: F1DataIngestor) -> None:
 
 
 def test_fetch_page_errors(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
-    """Test various API error scenarios in fetch_page."""
-    # 1. RequestException
+    """Test API error handling inside fetch_page without triggering tenacity retries.
+
+    The @retry decorator is applied inline on fetch_page. Tenacity always exposes the
+    undecorated function via __wrapped__, which lets us test error-handling branches
+    directly without waiting for retry backoff.
+    """
+    # Access the underlying undecorated function via tenacity's __wrapped__ attribute
+    unwrapped = ingestor.fetch_page.__wrapped__  # type: ignore[attr-defined]
+    bound_unwrapped = unwrapped.__get__(ingestor, F1DataIngestor)
+
+    ingestor._reset_stats()
+
+    # 1. RequestException path
     mock_session.get.side_effect = requests.RequestException("API error")
+    with pytest.raises(requests.RequestException):
+        bound_unwrapped("http://test", 10, 0)
+    assert ingestor.stats["errors_encountered"] == 1
 
-    # The @retry decorator makes it hard to patch RETRY_MAX_ATTEMPTS or the strategy.
-    # We'll patch the instance method to return the undecorated one for this test
-    # if it has a __wrapped__ attribute, or just mock the decorator.
-    # Actually, we can just use patch.dict on sys.modules to mock tenacity.retry
-    # but that's overkill. Let's just patch the method's retry behavior.
-
-    # Simple fix: patch the fetch_page method on the instance to avoid retries
-    with patch("f1_pipeline.ingestion.ingestor.stop_after_attempt", return_value=MagicMock()):
-        with patch.object(
-            ingestor, "fetch_page", side_effect=requests.RequestException("API error")
-        ):
-            with pytest.raises(requests.RequestException):
-                ingestor.fetch_page("http://test", 10, 0)
-    # The above doesn't hit the internal catch blocks of fetch_page though.
-    # To hit catch blocks:
-    mock_session.get.side_effect = requests.RequestException("API error")
-    with patch(
-        "f1_pipeline.ingestion.ingestor.RETRY_MAX_ATTEMPTS", 1
-    ):  # This is used by stop_after_attempt(RETRY_MAX_ATTEMPTS)
-        # However, the decorator is already applied.
-        # Let's just use a shortcut: call the .__wrapped__ if it's there? No.
-        # We'll just patch the retry itself in the module for all tests.
-        pass
-
-    # NEW APPROACH: Patch the retry strategy *completely* at import time? No.
-    # Let's just use a side effect that triggers the error and then check stats.
-    with patch("f1_pipeline.ingestion.ingestor.RETRY_STRATEGY", lambda x: x):  # Null decorator
-        # But ingestor is already loaded.
-        pass
-
-    # OK, let's just make the test wait a bit if needed, or better,
-    # use a mock that calls the original but without the decorator.
-    with patch.object(
-        ingestor,
-        "fetch_page",
-        side_effect=ingestor.fetch_page.__wrapped__.__get__(ingestor, F1DataIngestor),  # type: ignore[attr-defined]
-    ):
-        # Reset stats to be sure
-        ingestor._reset_stats()
-        mock_session.get.side_effect = requests.RequestException("API error")
-        with pytest.raises(requests.RequestException):
-            ingestor.fetch_page("http://test", 10, 0)
-        assert ingestor.stats["errors_encountered"] >= 1
-
-        mock_session.get.side_effect = None
-        mock_session.get.return_value.json.side_effect = ValueError("Bad JSON")
-        with pytest.raises(ValueError):
-            ingestor.fetch_page("http://test", 10, 0)
-        assert ingestor.stats["errors_encountered"] >= 2
+    # 2. ValueError (bad JSON) path
+    mock_session.get.side_effect = None
+    mock_session.get.return_value.json.side_effect = ValueError("Bad JSON")
+    with pytest.raises(ValueError):
+        bound_unwrapped("http://test", 10, 0)
+    assert ingestor.stats["errors_encountered"] == 2
 
 
 def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:

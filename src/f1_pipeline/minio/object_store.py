@@ -73,17 +73,47 @@ class F1ObjectStore:
         Raises:
             Exception: If client creation fails
         """
+        return self.__class__.create_client(
+            endpoint_url=self.endpoint_url,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            max_pool_connections=self.max_pool_connections,
+        )
+
+    @classmethod
+    def create_client(
+        cls,
+        endpoint_url: str,
+        access_key: str,
+        secret_key: str,
+        max_pool_connections: int = 50,
+    ) -> Any:
+        """
+        Create a standalone boto3 S3 client without binding to a bucket.
+
+        Use this when you need a shared client for multiple stores, without
+        having to instantiate a dummy F1ObjectStore with a fake bucket name.
+
+        Args:
+            endpoint_url: MinIO/S3 endpoint URL
+            access_key: AWS access key ID
+            secret_key: AWS secret access key
+            max_pool_connections: Maximum connections in connection pool
+
+        Returns:
+            Configured boto3 S3 client
+        """
         try:
             config = Config(
                 signature_version="s3v4",
-                max_pool_connections=self.max_pool_connections,
+                max_pool_connections=max_pool_connections,
                 retries={"max_attempts": 3, "mode": "standard"},
             )
             client = boto3.client(
                 "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
+                endpoint_url=endpoint_url,
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
                 region_name=MINIO_REGION,
                 config=config,
             )

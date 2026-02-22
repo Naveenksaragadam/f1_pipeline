@@ -1,5 +1,4 @@
 import logging
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -39,29 +38,16 @@ def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
     assert any("No .env file found" in record.message for record in caplog.records)
 
 
-def test_config_import_validation(caplog: pytest.LogCaptureFixture) -> None:
-    """Test module-level validation call when not in pytest (covers line 238)."""
-    import importlib
+def test_validate_configuration_explicit_call(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that validate_configuration() can be explicitly called by a startup entrypoint.
 
+    The module no longer auto-calls this at import time (removed fragile pytest guard).
+    Callers (DAGs, scripts) are expected to call it once explicitly on startup.
+    """
     caplog.set_level(logging.INFO)
-
-    # Better: Patch sys.modules directly
-    original_modules = sys.modules.copy()
-    try:
-        # Create a clean slate for the test
-        temp_modules = sys.modules.copy()
-        if "pytest" in temp_modules:
-            del temp_modules["pytest"]
-
-        with patch.object(sys, "modules", temp_modules):
-            # We don't mock validate_configuration because it overwrites it on reload.
-            # We just check the log it produces.
-            importlib.reload(config)
-            assert any(
-                "Configuration validation passed" in record.message for record in caplog.records
-            )
-    finally:
-        sys.modules = original_modules
+    result = config.validate_configuration()
+    assert result is True
+    assert any("Configuration validation passed" in r.message for r in caplog.records)
 
 
 def test_get_env_required_failure() -> None:
