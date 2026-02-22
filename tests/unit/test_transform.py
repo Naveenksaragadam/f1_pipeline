@@ -222,3 +222,23 @@ def test_process_object_empty_records(mock_stores: tuple[MagicMock, MagicMock]) 
     transformer.process_object("source.json", "target.parquet")
 
     silver_store.put_object.assert_not_called()
+
+def test_process_batch_custom_threshold(mock_stores: tuple[MagicMock, MagicMock]) -> None:
+    """Test that custom error threshold is respected."""
+    bronze, silver = mock_stores
+    # Set threshold to 50%
+    transformer = F1Transformer(bronze, silver, SimpleSchema, error_threshold=0.50)
+
+    # 6 records, 2 fail -> 33% error rate (< 50%)
+    # total_count >= 5 to avoid the separate small-batch safety check
+    records = [
+        {"driverId": "max", "nationality": "Dutch"},
+        {"driverId": "lewis", "nationality": "British"},
+        {"driverId": "charles", "nationality": "Monegasque"},
+        {"driverId": "lando", "nationality": "British"},
+        {"invalid": "record 1"},
+        {"invalid": "record 2"},
+    ]
+    # Should NOT raise because 33% < 50%
+    df = transformer.process_batch(records)
+    assert df.height == 4

@@ -78,7 +78,7 @@ def test_save_to_minio_error(ingestor: F1DataIngestor) -> None:
         ingestor._save_to_minio(
             {"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"}
         )
-    assert ingestor.stats["errors_encountered"] == 1
+    assert ingestor.stats.errors_encountered == 1
 
 
 def test_fetch_page_errors(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
@@ -98,14 +98,15 @@ def test_fetch_page_errors(ingestor: F1DataIngestor, mock_session: MagicMock) ->
     mock_session.get.side_effect = requests.RequestException("API error")
     with pytest.raises(requests.RequestException):
         bound_unwrapped("http://test", 10, 0)
-    assert ingestor.stats["errors_encountered"] == 1
+    # Note: RequestException no longer increments errors_encountered inside fetch_page
+    assert ingestor.stats.errors_encountered == 0
 
     # 2. ValueError (bad JSON) path
     mock_session.get.side_effect = None
     mock_session.get.return_value.json.side_effect = ValueError("Bad JSON")
     with pytest.raises(ValueError):
         bound_unwrapped("http://test", 10, 0)
-    assert ingestor.stats["errors_encountered"] == 2
+    assert ingestor.stats.errors_encountered == 1
 
 
 def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:
@@ -125,7 +126,7 @@ def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:
     )
     assert success is True
     assert total == 0
-    assert ingestor.stats["files_skipped"] == 1
+    assert ingestor.stats.files_skipped == 1
 
     # 2. Skip via store.object_exists
     ingestor.store.object_exists.return_value = True  # type: ignore[attr-defined]
@@ -133,7 +134,7 @@ def test_fetch_and_save_page_skip(ingestor: F1DataIngestor) -> None:
         "drivers", "b2", "url", 2024, None, 1, 10, 0, False, existing_keys=None
     )
     assert success is True
-    assert ingestor.stats["files_skipped"] == 2
+    assert ingestor.stats.files_skipped == 2
 
 
 def test_fetch_and_save_page_error(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
@@ -143,7 +144,7 @@ def test_fetch_and_save_page_error(ingestor: F1DataIngestor, mock_session: Magic
         "drivers", "b1", "url", 2024, None, 1, 10, 0, False
     )
     assert success is False
-    assert ingestor.stats["errors_encountered"] == 1
+    assert ingestor.stats.errors_encountered == 1
 
 
 def test_ingest_endpoint_invalid_config(ingestor: F1DataIngestor) -> None:
@@ -173,7 +174,7 @@ def test_silent_data_corruption_exception(
         ingestor._fetch_and_save_page("races", "b1", "url", 2024, None, 1, 10, 0, False)
 
     # Must NOT be counted as a skippable error
-    assert ingestor.stats["errors_encountered"] == 0
+    assert ingestor.stats.errors_encountered == 0
 
 
 def test_data_corruption_propagates_through_ingest_endpoint(
@@ -213,7 +214,7 @@ def test_ingest_endpoint_first_page_fail(ingestor: F1DataIngestor, mock_session:
     """Test failure when fetching the first page."""
     # Make _fetch_and_save_page return False
     with patch.object(ingestor, "_fetch_and_save_page", return_value=(False, 0)):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(RuntimeError) as excinfo:
             ingestor.ingest_endpoint("drivers", "b1")
         assert "Failed to fetch first page" in str(excinfo.value)
 
@@ -301,7 +302,7 @@ def test_ingest_sequential_skipping(ingestor: F1DataIngestor, mock_session: Magi
 
     # Page 1 should be fetched (total=20)
     # Page 2 should be skipped if round_num logic lines up.
-    assert ingestor.stats["files_skipped"] >= 1
+    assert ingestor.stats.files_skipped >= 1
 
 
 def test_run_full_extraction_success(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
@@ -338,11 +339,11 @@ def test_run_full_extraction_failure(ingestor: F1DataIngestor, mock_session: Mag
 def test_save_to_minio_snapshot_logging(ingestor: F1DataIngestor) -> None:
     """Trigger the snapshot logging in _save_to_minio."""
     # We need files_written % 10 == 0
-    ingestor.stats["files_written"] = 9
+    ingestor.stats.files_written = 9
     ingestor._save_to_minio(
         {"data": 1}, "path", {"batch_id": "b1", "endpoint": "e1", "ingestion_timestamp": "t1"}
     )
-    assert ingestor.stats["files_written"] == 10
+    assert ingestor.stats.files_written == 10
 
 
 def test_ingest_pagination_sequential(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
