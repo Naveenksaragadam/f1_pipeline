@@ -11,7 +11,7 @@ import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import IO, Any
+from typing import IO, Any, cast
 
 import boto3
 from botocore.client import Config
@@ -117,7 +117,7 @@ class F1ObjectStore:
                 region_name=MINIO_REGION,
                 config=config,
             )
-            logger.info(f"✅ S3 client created (Region: {MINIO_REGION})")
+            logger.debug(f"✅ S3 client created (Region: {MINIO_REGION})")
             return client
         except Exception as e:
             logger.error(f"❌ Failed to create S3 client: {e}")
@@ -202,23 +202,6 @@ class F1ObjectStore:
                 self.client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": objects})
                 logger.debug(f"Deleted {len(objects)} objects from {self.bucket_name}")
 
-    def _serialize_body(self, body: dict | list | str | bytes) -> tuple[str | bytes, str]:
-        """
-        Serialize data for S3 upload.
-
-        Args:
-            body: Data to serialize
-
-        Returns:
-            Tuple of (serialized_body, content_type)
-        """
-        if isinstance(body, (dict, list)):
-            return (json.dumps(body), "application/json")
-        elif isinstance(body, bytes):
-            return (body, "application/octet-stream")
-        else:
-            return (str(body), "text/plain")
-
     def put_object(
         self,
         key: str,
@@ -285,8 +268,9 @@ class F1ObjectStore:
         # Apply Gzip Compression (if requested)
         content_encoding = None
         if compress:
-            # Level 9 = Maximum compression
-            data = gzip.compress(data, compresslevel=9)
+            # Level 6 is the default and provides ~95% of level-9 compression
+            # at roughly half the CPU time.
+            data = gzip.compress(data, compresslevel=6)
             content_encoding = "gzip"
 
         # Calculate MD5 Checksum (Data Integrity)
@@ -411,8 +395,6 @@ class F1ObjectStore:
             # 🔍 AUTO-DECOMPRESS: Check headers for gzip
             if response.get("ContentEncoding") == "gzip":
                 content = gzip.decompress(content)
-
-            from typing import cast
 
             logger.debug(f"✅ Downloaded {key} ({len(content):,} bytes)")
             return cast(bytes, content)
