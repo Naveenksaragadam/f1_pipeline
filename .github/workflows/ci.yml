@@ -78,7 +78,9 @@ jobs:
           CLICKHOUSE_PASSWORD: ""
         run: |
           uv pip install dbt-clickhouse
-          cd f1_dbt && uv run dbt deps && uv run dbt compile --target ci
+          # `dbt parse` validates Jinja syntax, model references, and schema
+          # without requiring a live DB connection — correct for CI linting.
+          cd f1_dbt && uv run dbt deps && uv run dbt parse --target ci
 
   secret-scanning:
     runs-on: ubuntu-latest
