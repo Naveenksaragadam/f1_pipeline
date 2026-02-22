@@ -78,7 +78,7 @@ real-world production deployments.
 ┌─────────────────────────────────────────────────────┐
 │              Apache Airflow 3.x                     │
 │  ┌──────────────────────────────────────────────┐   │
-│  │  DAG: f1_pipeline (Yearly Schedule)          │   │
+│  │  DAG: f1_production_pipeline (Yearly)        │   │
 │  │                                              │   │
 │  │  Task 1: Extract (API → Bronze) ✅           │   │
 │  │  Task 2: Transform (Bronze → Silver) ✅      │   │
@@ -121,7 +121,7 @@ real-world production deployments.
 | Component             | Technology              | Purpose                               |
 | --------------------- | ----------------------- | ------------------------------------- |
 | **Orchestration**     | Apache Airflow 3.1.7    | 2026 FAANG-grade DAG management       |
-| **dbt Management**    | Astronomer Cosmos       | Granular dbt observability           |
+| **dbt Management**    | Astronomer Cosmos       | Granular dbt observability            |
 | **Storage**           | MinIO (S3-compatible)   | Object storage (Bronze/Silver layers) |
 | **Transformation**    | Python 3.12 + Polars    | High-performance data processing      |
 | **Data Warehouse**    | ClickHouse 24.3         | High-performance OLAP database        |
@@ -222,18 +222,18 @@ f1_postgres         running            5432/tcp
 #### Option A: Via Airflow UI
 
 1. Navigate to <http://localhost:8080>
-2. Enable the `f1_pipeline` DAG
+2. Enable the `f1_production_pipeline` DAG
 3. Click **Trigger DAG** (manually trigger for 2024 season)
 
 #### Option B: Via Command Line
 
 ```bash
 # Trigger DAG manually
-docker-compose exec airflow-scheduler airflow dags trigger f1_pipeline
+docker-compose exec airflow-scheduler airflow dags trigger f1_production_pipeline
 
 # Or run backfill for historical seasons
 docker-compose exec airflow-scheduler \
-  python -m f1_pipeline.ingestion.backfill --start 2020 --end 2023
+  python -m f1_pipeline.backfill.backfill --start 2020 --end 2023
 ```
 
 ### 6. Verify Data
@@ -264,7 +264,9 @@ f1_pipeline/
 │       ├── ingestion/
 │       │   ├── __init__.py       # Module exports
 │       │   ├── ingestor.py       # Core extraction engine
-│       │   ├── http_client.py    # HTTP session with retries
+│       │   └── http_client.py    # HTTP session with retries
+│       │
+│       ├── backfill/
 │       │   └── backfill.py       # CLI backfill script
 │       │
 │       ├── config.py             # Configuration & validation
@@ -313,7 +315,7 @@ f1_pipeline/
 **Backfill specific seasons:**
 
 ```bash
-python -m f1_pipeline.ingestion.backfill \
+python -m f1_pipeline.backfill.backfill \
   --start 2015 \
   --end 2023 \
   --batch-id "historical_load_v1"
@@ -323,10 +325,10 @@ python -m f1_pipeline.ingestion.backfill \
 
 ```bash
 # Skip failed seasons and continue
-python -m f1_pipeline.ingestion.backfill --start 1950 --end 2023
+python -m f1_pipeline.backfill.backfill --start 1950 --end 2023
 
 # Stop on first error
-python -m f1_pipeline.ingestion.backfill --start 1950 --end 2023 --no-skip-on-error
+python -m f1_pipeline.backfill.backfill --start 1950 --end 2023 --no-skip-on-error
 ```
 
 ### Programmatic Usage
@@ -528,7 +530,7 @@ docker-compose logs -f airflow-scheduler
 docker-compose logs -f airflow-webserver
 
 # Application logs (in container)
-docker-compose exec airflow-scheduler tail -f /opt/airflow/logs/dag_id=f1_pipeline/...
+docker-compose exec airflow-scheduler tail -f /opt/airflow/logs/dag_id=f1_production_pipeline/...
 
 # MinIO logs
 docker-compose logs -f minio
@@ -594,7 +596,7 @@ max_active_runs=1  # In DAG config
 export AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
 
 # Run extraction with verbose output
-python -m f1_pipeline.ingestion.backfill \
+python -m f1_pipeline.backfill.backfill \
   --start 2024 --end 2024 -v
 ```
 

@@ -128,6 +128,17 @@ class FastestLapSchema(F1BaseModel):
 
 # --- Event Schemas ---
 
+class RaceSchema(F1BaseModel):
+    """Validation schema for a Race schedule/event entity."""
+
+    season: int = Field(description="The calendar year of the season")
+    round: int = Field(description="The round number within the season")
+    url: str = Field(description="Wikipedia URL for the race")
+    race_name: str = Field(alias="raceName", description="Name of the race event")
+    circuit: CircuitSchema = Field(alias="Circuit", description="Nested circuit profile")
+    date: str = Field(description="Race date in YYYY-MM-DD format")
+    time: str | None = Field(None, description="Race start time in UTC")
+
 
 class ResultSchema(F1BaseModel):
     """Validation schema for a single Race Result record."""

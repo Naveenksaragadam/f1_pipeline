@@ -14,6 +14,7 @@ from f1_pipeline.transform.schemas import (
     LapSchema,
     PitStopSchema,
     QualifyingSchema,
+    RaceSchema,
     ResultSchema,
     SeasonSchema,
     SprintSchema,
@@ -31,6 +32,7 @@ TRANSFORM_FACTORY: dict[str, type[F1BaseModel]] = {
     "drivers": DriverSchema,
     "constructors": ConstructorSchema,
     # Performance/Event Data
+    "races": RaceSchema,
     "results": ResultSchema,
     "qualifying": QualifyingSchema,
     "sprint": SprintSchema,

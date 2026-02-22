@@ -74,13 +74,22 @@ class F1Transformer:
         # 3 & 4. Validate and convert to Polars
         df = self.process_batch(records)
 
+        # Data Quality Layer: Assert we haven't silently lost all records
         if df.is_empty():
-            logger.warning(f"⚠️ Resulting DataFrame is empty for {source_key}")
-            return
+            if len(records) > 0:
+                raise ValueError(
+                    f"Data Quality Error: Started with {len(records)} records but ended "
+                    f"with an empty DataFrame after validation. This indicates a logic error."
+                )
 
         # 5. Explode lists and Flatten structures
         logger.info(f"🧱 Processing complex structures for {target_key}...")
         df = self._process_complex_types(df)
+
+        # Data Quality Layer: Post-transformation check
+        if df.is_empty():
+            raise ValueError("Data Quality Error: Transformation resulted in an empty DataFrame.")
+
 
         # 6. Write to Parquet
         logger.info(f"💾 Writing {df.height} rows to Silver Layer: {target_key}")

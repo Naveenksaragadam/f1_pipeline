@@ -73,8 +73,8 @@ MINIO_ENDPOINT: str = os.getenv(
     "MINIO_ENDPOINT", os.getenv("MINIO_ENDPOINT_EXTERNAL", "http://localhost:9000")
 )
 
-MINIO_ACCESS_KEY: str = get_env_required("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY: str = get_env_required("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS_KEY: str = get_env_required("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY: str = get_env_required("MINIO_SECRET_KEY")
 
 # Bucket Names (Medallion Architecture)
 MINIO_BUCKET_BRONZE: str = os.getenv("BUCKET_BRONZE", "bronze")
@@ -89,7 +89,7 @@ CLICKHOUSE_HOST: str = os.getenv(
 )
 CLICKHOUSE_PORT: int = int(os.getenv("CLICKHOUSE_PORT", "8123"))
 CLICKHOUSE_USER: str = os.getenv("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD: str = os.getenv("CLICKHOUSE_PASSWORD", "")
+CLICKHOUSE_PASSWORD: str = get_env_required("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "f1_analytics")
 
 # --- 5. ENDPOINT STRATEGY (Business Rules) ---
