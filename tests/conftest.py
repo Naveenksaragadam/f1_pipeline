@@ -23,6 +23,7 @@ def mock_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         "RETRY_MAX_ATTEMPTS": "1",
         "RETRY_MIN_WAIT": "0",
         "RETRY_MAX_WAIT": "1",
+        "CLICKHOUSE_PASSWORD": "mock_password",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)

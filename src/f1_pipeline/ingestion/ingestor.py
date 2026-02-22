@@ -461,6 +461,117 @@ class F1DataIngestor:
 
         logger.info(f"✅ Completed {endpoint_name}")
 
+    def _run_phase_reference_data(self, batch_id: str, season: int, force_refresh: bool) -> None:
+        """Phase 1: Ingest static reference endpoints — seasons, circuits, status."""
+        logger.info("--- Phase 1: Reference Data ---")
+        for endpoint in ["seasons", "circuits", "status"]:
+            self.ingest_endpoint(
+                endpoint,
+                batch_id,
+                season=(season if endpoint == "circuits" else None),
+                force_refresh=force_refresh,
+                max_workers=1,
+            )
+
+    def _run_phase_season_data(
+        self, batch_id: str, season: int, force_refresh: bool, max_workers: int
+    ) -> list[dict[str, Any]]:
+        """Phase 2 + 3: Ingest season-level data and parse the race calendar.
+
+        Returns:
+            List of race dicts from the Bronze race calendar (or API fallback).
+        """
+        logger.info("--- Phase 2: Season-Level Data ---")
+        for endpoint in ["constructors", "drivers", "races"]:
+            self.ingest_endpoint(
+                endpoint,
+                batch_id,
+                season=season,
+                force_refresh=force_refresh,
+                max_workers=max_workers,
+            )
+
+        # Phase 3: Parse race calendar from Bronze (races just ingested above).
+        logger.info("--- Phase 3: Race Calendar Parsing ---")
+        races_key = f"ergast/endpoint=races/season={season}/batch_id={batch_id}/page_001.json"
+        try:
+            logger.info(f"📖 Reading race calendar from Bronze: {races_key}")
+            races_envelope = self.store.get_json(races_key)
+            races_list: list[dict[str, Any]] = races_envelope["data"]["MRData"]["RaceTable"][
+                "Races"
+            ]
+            logger.info("✅ Successfully read race calendar from Bronze")
+        except Exception as e:
+            # Invariant: Phase 2 already ingested races successfully (or would have raised),
+            # so the data IS in Bronze. A read failure here is a transient MinIO issue.
+            # We fall back to a direct API call to unblock Phase 4, but this is unexpected.
+            logger.error(
+                f"❌ Failed to read race calendar from Bronze (unexpected — data should exist): {e}\n"
+                f"   Falling back to direct API call to unblock Phase 4..."
+            )
+            schedule_url = f"{self.base_url}/{season}.json"
+            schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
+            races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
+
+        logger.info(f"📅 Found {len(races_list)} rounds for season {season}")
+        return races_list
+
+    def _run_phase_race_data(
+        self,
+        races_list: list[dict[str, Any]],
+        batch_id: str,
+        season: int,
+        force_refresh: bool,
+        max_workers: int,
+    ) -> None:
+        """Phase 4: Ingest all per-round race endpoints for every round in the season."""
+        total_rounds = len(races_list)
+        logger.info(
+            f"\n{'=' * 70}\n--- Phase 4: Race-Level Data ({total_rounds} rounds) ---\n{'=' * 70}"
+        )
+
+        for idx, race in enumerate(races_list, 1):
+            round_num = int(race["round"])
+            race_name = race.get("raceName", "Unknown")
+            round_start = datetime.now()
+
+            logger.info(
+                f"\n{'─' * 70}\n[{idx}/{total_rounds}] Round {round_num}: {race_name}\n{'─' * 70}"
+            )
+
+            race_endpoints = ["results", "qualifying", "laps", "pitstops"]
+            if "Sprint" in race:
+                race_endpoints.append("sprint")
+                logger.debug(f"🏃‍♂️ Sprint session detected for Round {round_num}")
+
+            for endpoint in race_endpoints:
+                self.ingest_endpoint(
+                    endpoint,
+                    batch_id,
+                    season=season,
+                    round_num=round_num,
+                    force_refresh=force_refresh,
+                    max_workers=max_workers,
+                )
+
+            for endpoint in ["driverstandings", "constructorstandings"]:
+                self.ingest_endpoint(
+                    endpoint,
+                    batch_id,
+                    season=season,
+                    round_num=round_num,
+                    force_refresh=force_refresh,
+                    max_workers=1,
+                )
+
+            round_duration = (datetime.now() - round_start).total_seconds()
+            logger.info(
+                f"{'─' * 70}\n"
+                f"✅ Round {round_num} Complete: {round_duration:.2f}s "
+                f"({round_duration / 60:.1f}m)\n"
+                f"{'─' * 70}"
+            )
+
     def run_full_extraction(
         self,
         season: int,
@@ -469,16 +580,16 @@ class F1DataIngestor:
         concurrency_enabled: bool = True,
     ) -> dict[str, Any]:
         """
-        Orchestrate full season extraction following dependency graph.
+        Orchestrate full season extraction following the 4-phase dependency graph.
 
         Args:
             season: F1 season year (e.g., 2024)
             batch_id: Unique batch identifier
-            force_refresh: If True, re-fetch all data
+            force_refresh: If True, re-fetch all data regardless of existing files
             concurrency_enabled: Enable threading for paginated endpoints
 
         Returns:
-            Dictionary containing extraction statistics
+            Dictionary containing extraction statistics and phase timings
         """
         logger.info(
             f"\n{'=' * 70}\n"
@@ -491,136 +602,27 @@ class F1DataIngestor:
 
         self._reset_stats()
         extraction_start = datetime.now()
-        phase_timings = {}
-        MAX_WORKERS = MAX_CONCURRENT_WORKERS if concurrency_enabled else 1
+        phase_timings: dict[str, float] = {}
+        max_workers = MAX_CONCURRENT_WORKERS if concurrency_enabled else 1
 
         try:
-            # ============================================================
-            # PHASE 1: Reference Data (Static Endpoints)
-            # ============================================================
             phase_start = datetime.now()
-            logger.info("\n--- Phase 1: Reference Data ---")
-
-            for endpoint in ["seasons", "circuits", "status"]:
-                self.ingest_endpoint(
-                    endpoint,
-                    batch_id,
-                    season=(season if endpoint == "circuits" else None),
-                    force_refresh=force_refresh,
-                    max_workers=1,
-                )
-
+            self._run_phase_reference_data(batch_id, season, force_refresh)
             phase_timings["reference_data"] = (datetime.now() - phase_start).total_seconds()
             logger.info(f"✅ Phase 1 Complete: {phase_timings['reference_data']:.2f}s\n")
 
-            # ============================================================
-            # PHASE 2: Season-Level Data
-            # ============================================================
             phase_start = datetime.now()
-            logger.info("--- Phase 2: Season-Level Data ---")
-
-            for endpoint in ["constructors", "drivers", "races"]:
-                self.ingest_endpoint(
-                    endpoint,
-                    batch_id,
-                    season=season,
-                    force_refresh=force_refresh,
-                    max_workers=MAX_WORKERS,
-                )
-
+            races_list = self._run_phase_season_data(batch_id, season, force_refresh, max_workers)
             phase_timings["season_data"] = (datetime.now() - phase_start).total_seconds()
-            logger.info(f"✅ Phase 2 Complete: {phase_timings['season_data']:.2f}s\n")
+            logger.info(f"✅ Phases 2+3 Complete: {phase_timings['season_data']:.2f}s\n")
 
-            # ============================================================
-            # PHASE 3: Parse Race Calendar (Read from Bronze)
-            # ============================================================
-            phase_start = datetime.now()
-            logger.info("--- Phase 3: Race Calendar Parsing ---")
-
-            races_key = f"ergast/endpoint=races/season={season}/batch_id={batch_id}/page_001.json"
-
-            try:
-                logger.info(f"📖 Reading race calendar from Bronze: {races_key}")
-                races_envelope = self.store.get_json(races_key)
-                races_list = races_envelope["data"]["MRData"]["RaceTable"]["Races"]
-                logger.info("✅ Successfully read race calendar from Bronze")
-            except Exception as e:
-                # Invariant: Phase 2 already ingested races successfully (or would have raised),
-                # so the data IS in Bronze. A read failure here is a transient MinIO issue.
-                # We fall back to a direct API call to unblock Phase 4, but this is unexpected.
-                logger.error(
-                    f"❌ Failed to read race calendar from Bronze (unexpected — data should exist): {e}\n"
-                    f"   Falling back to direct API call to unblock Phase 4..."
-                )
-                schedule_url = f"{self.base_url}/{season}.json"
-                schedule_data = self.fetch_page(schedule_url, limit=DEFAULT_LIMIT, offset=0)
-                races_list = schedule_data.get("MRData", {}).get("RaceTable", {}).get("Races", [])
-
-            total_rounds = len(races_list)
-            logger.info(f"📅 Found {total_rounds} rounds for season {season}")
-
-            phase_timings["calendar_parse"] = (datetime.now() - phase_start).total_seconds()
-
-            if total_rounds == 0:
+            if not races_list:
                 logger.warning(f"⚠️  No races found for season {season}")
                 return self._generate_summary(extraction_start, phase_timings)
 
-            # ============================================================
-            # PHASE 4: Race-Level Data Extraction
-            # ============================================================
-            logger.info(
-                f"\n{'=' * 70}\n"
-                f"--- Phase 4: Race-Level Data ({total_rounds} rounds) ---\n"
-                f"{'=' * 70}"
-            )
-
-            race_phase_start = datetime.now()
-
-            for idx, race in enumerate(races_list, 1):
-                round_num = int(race["round"])
-                race_name = race.get("raceName", "Unknown")
-                round_start = datetime.now()
-
-                logger.info(
-                    f"\n{'─' * 70}\n"
-                    f"[{idx}/{total_rounds}] Round {round_num}: {race_name}\n"
-                    f"{'─' * 70}"
-                )
-
-                race_endpoints = ["results", "qualifying", "laps", "pitstops"]
-                if "Sprint" in race:
-                    race_endpoints.append("sprint")
-                    logger.debug(f"🏃‍♂️ Sprint session detected for Round {round_num}")
-
-                for endpoint in race_endpoints:
-                    self.ingest_endpoint(
-                        endpoint,
-                        batch_id,
-                        season=season,
-                        round_num=round_num,
-                        force_refresh=force_refresh,
-                        max_workers=MAX_WORKERS,
-                    )
-
-                for endpoint in ["driverstandings", "constructorstandings"]:
-                    self.ingest_endpoint(
-                        endpoint,
-                        batch_id,
-                        season=season,
-                        round_num=round_num,
-                        force_refresh=force_refresh,
-                        max_workers=1,
-                    )
-
-                round_duration = (datetime.now() - round_start).total_seconds()
-                logger.info(
-                    f"{'─' * 70}\n"
-                    f"✅ Round {round_num} Complete: {round_duration:.2f}s "
-                    f"({round_duration / 60:.1f}m)\n"
-                    f"{'─' * 70}"
-                )
-
-            phase_timings["race_data"] = (datetime.now() - race_phase_start).total_seconds()
+            phase_start = datetime.now()
+            self._run_phase_race_data(races_list, batch_id, season, force_refresh, max_workers)
+            phase_timings["race_data"] = (datetime.now() - phase_start).total_seconds()
 
             return self._generate_summary(extraction_start, phase_timings)
 
