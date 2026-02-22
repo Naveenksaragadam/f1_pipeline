@@ -291,16 +291,17 @@ class F1DataIngestor:
                 # Ergast wraps data in MRData -> [Endpoint]Table -> [Item]s
                 # We do a basic check: if we can find any list that has items, it's valid.
                 # If ALL lists in the JSON are empty, but total > 0, it's corrupt.
-                has_items = False
                 def check_for_items(obj: Any) -> bool:
                     if isinstance(obj, list) and len(obj) > 0:
                         return True
                     if isinstance(obj, dict):
                         return any(check_for_items(v) for v in obj.values())
                     return False
-                
+
                 if not check_for_items(mr_data):
-                    raise ValueError(f"Silent Data Corruption: API reported total={total_records} but returned empty data payload.")
+                    raise ValueError(
+                        f"Silent Data Corruption: API reported total={total_records} but returned empty data payload."
+                    )
 
             self._save_to_minio(response_data, s3_key, metadata)
             return (True, total_records)
