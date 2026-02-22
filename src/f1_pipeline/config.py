@@ -6,6 +6,7 @@ Loads environment variables and defines endpoint specifications.
 import logging
 import os
 import sys
+from typing import TypedDict
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -93,7 +94,19 @@ CLICKHOUSE_PASSWORD: str = get_env_required("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DB: str = os.getenv("CLICKHOUSE_DB", "f1_analytics")
 
 # --- 5. ENDPOINT STRATEGY (Business Rules) ---
-ENDPOINT_CONFIG: dict[str, dict] = {
+
+
+class EndpointConfig(TypedDict):
+    """Type-safe shape for a single endpoint entry in ENDPOINT_CONFIG."""
+
+    group: str
+    url_pattern: str
+    has_season: bool
+    has_round: bool
+    pagination: bool
+
+
+ENDPOINT_CONFIG: dict[str, EndpointConfig] = {
     # --- Reference Data (Static or Rarely Changes) ---
     "seasons": {
         "group": "reference",
@@ -231,8 +244,3 @@ def validate_configuration() -> bool:
 
     logger.info("✅ Configuration validation passed")
     return True
-
-
-# Validate configuration on import (only when not in test mode)
-if __name__ != "__main__" and "pytest" not in sys.modules:
-    validate_configuration()

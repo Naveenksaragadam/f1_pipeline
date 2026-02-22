@@ -48,15 +48,6 @@ from .http_client import create_session
 
 logger = logging.getLogger(__name__)
 
-# Define retry strategy for transient errors
-RETRY_STRATEGY = retry(
-    stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
-    wait=wait_exponential(min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT),
-    retry=retry_if_exception_type(RequestException),
-    reraise=True,
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-)
-
 
 class F1DataIngestor:
     """
@@ -215,7 +206,13 @@ class F1DataIngestor:
             logger.error(f"❌ Failed to save {path}: {e}")
             raise
 
-    @RETRY_STRATEGY
+    @retry(
+        stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+        wait=wait_exponential(min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT),
+        retry=retry_if_exception_type(RequestException),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     def fetch_page(self, url: str, limit: int, offset: int) -> dict[str, Any]:
         """
         Fetch a single page from the API with automatic retries.
