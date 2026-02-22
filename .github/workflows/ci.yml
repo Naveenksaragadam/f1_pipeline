@@ -61,6 +61,9 @@ jobs:
       - name: Dependency Vulnerability Scanning (pip-audit)
         run: |
           pip install pip-audit
+          # Ignore apache-airflow CVEs that require >=3.1.7, which conflicts with
+          # astronomer-cosmos's pinned fastapi/starlette constraint ceiling.
+          # These are UI/auth-layer issues that don't affect our batch ingestion pipeline.
           pip-audit -r requirements.txt \
             --ignore-vuln CVE-2025-62503 \
             --ignore-vuln CVE-2025-62402 \
@@ -68,8 +71,7 @@ jobs:
             --ignore-vuln CVE-2025-68438 \
             --ignore-vuln CVE-2025-68675 \
             --ignore-vuln CVE-2026-24098 \
-            --ignore-vuln CVE-2026-22922 \
-            --ignore-vuln CVE-2025-62727
+            --ignore-vuln CVE-2026-22922
 
       - name: dbt Compilation Check
         run: |
