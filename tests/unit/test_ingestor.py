@@ -14,7 +14,7 @@ def mock_session() -> MagicMock:
     mock.get.return_value.json.return_value = {
         "MRData": {
             "total": "20",  # Default: 1 page
-            "RaceTable": {"Races": []},
+            "RaceTable": {"Races": [{"dummy": "data"}]},
         }
     }
     return mock
@@ -182,6 +182,27 @@ def test_ingest_endpoint_invalid_config(ingestor: F1DataIngestor) -> None:
     assert "Unknown endpoint" in str(excinfo.value)
 
 
+def test_silent_data_corruption_exception(
+    ingestor: F1DataIngestor, mock_session: MagicMock
+) -> None:
+    """Test ValueError is caught internally when API reports total > 0 but payload array is empty."""
+    # API claims 100 records but provides no actual items
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "100", "RaceTable": {"Races": []}}
+    }
+
+    # We need to bypass the fetch_page retry logic for a clean test so we call _fetch_and_save
+    # _fetch_and_save_page catches all exceptions and logs them
+    success, count = ingestor._fetch_and_save_page(
+        "races", "b1", "url", 2024, None, 1, 10, 0, False
+    )
+    
+    # It should fail and return (False, 0)
+    assert not success
+    assert count == 0
+    assert ingestor.stats["errors_encountered"] == 1
+
+
 def test_ingest_endpoint_first_page_fail(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test failure when fetching the first page."""
     # Make _fetch_and_save_page return False
@@ -195,7 +216,7 @@ def test_ingest_pagination_edge_cases(ingestor: F1DataIngestor, mock_session: Ma
     """Test edge cases: no pagination or zero records."""
     # 1. Non-paginated (e.g. races)
     mock_session.get.return_value.json.return_value = {
-        "MRData": {"total": "100", "RaceTable": {"Races": []}}
+        "MRData": {"total": "100", "RaceTable": {"Races": [{"dummy": "data"}]}}
     }
     ingestor.ingest_endpoint("races", "b1", season=2024)
     assert mock_session.get.call_count == 1  # Only first page
@@ -210,7 +231,9 @@ def test_ingest_concurrent_worker_failure(
     ingestor: F1DataIngestor, mock_session: MagicMock
 ) -> None:
     """Test handling of failed worker in concurrent ingestion."""
-    mock_session.get.return_value.json.return_value = {"MRData": {"total": "50"}}
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "50", "table": {"items": [{"id": 1}]}}
+    }
 
     with patch("f1_pipeline.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
         mock_executor_instance = MockExecutor.return_value.__enter__.return_value
@@ -236,7 +259,9 @@ def test_ingest_concurrent_worker_failure(
 
 def test_ingest_sequential_skipping(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test skipping files in sequential ingestion."""
-    mock_session.get.return_value.json.return_value = {"MRData": {"total": "20"}}
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "20", "table": {"items": [{"id": 1}]}}
+    }
     # Page 1 key (unused but kept as comment for clarity if needed)
     # page1_key = ingestor._generate_path("drivers", "b1", 2024, None, 1)
     # Page 2 key
@@ -297,9 +322,9 @@ def test_ingest_pagination_sequential(ingestor: F1DataIngestor, mock_session: Ma
     """Test standard sequential pagination logic."""
     # Setup: 25 items, limit 10 => 3 pages (10, 10, 5)
     mock_session.get.return_value.json.side_effect = [
-        {"MRData": {"total": "25"}},  # Page 1 (initial check)
-        {"MRData": {"data": "page2"}},  # Page 2
-        {"MRData": {"data": "page3"}},  # Page 3
+        {"MRData": {"total": "25", "table": {"items": [{"id": 1}]}}},  # Page 1
+        {"MRData": {"total": "25", "table": {"items": [{"id": 2}]}}},  # Page 2
+        {"MRData": {"total": "25", "table": {"items": [{"id": 3}]}}},  # Page 3
     ]
 
     with patch("f1_pipeline.ingestion.ingestor.DEFAULT_LIMIT", 10):
@@ -310,7 +335,9 @@ def test_ingest_pagination_sequential(ingestor: F1DataIngestor, mock_session: Ma
 
 def test_ingest_concurrent_workers(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
     """Test that max_workers > 1 triggers ThreadPoolExecutor logic."""
-    mock_session.get.return_value.json.return_value = {"MRData": {"total": "50"}}
+    mock_session.get.return_value.json.return_value = {
+        "MRData": {"total": "50", "table": {"items": [{"id": 1}]}}
+    }
 
     with patch("f1_pipeline.ingestion.ingestor.ThreadPoolExecutor") as MockExecutor:
         mock_executor_instance = MockExecutor.return_value.__enter__.return_value
@@ -326,18 +353,26 @@ def test_ingest_concurrent_workers(ingestor: F1DataIngestor, mock_session: Magic
 
 
 def test_sprint_season_filtering(ingestor: F1DataIngestor, mock_session: MagicMock) -> None:
-    """Test that 'sprint' endpoint is only added for seasons >= 2021."""
-    races_data = {"MRData": {"RaceTable": {"Races": [{"round": "1", "raceName": "T"}]}}}
+    """Test that 'sprint' endpoint is only added when Sprint is in the race schedule."""
+    races_data_no_sprint = {"MRData": {"RaceTable": {"Races": [{"round": "1", "raceName": "T"}]}}}
+    races_data_with_sprint = {
+        "MRData": {
+            "RaceTable": {
+                "Races": [{"round": "1", "raceName": "T", "Sprint": {"date": "2024-04-20"}}]
+            }
+        }
+    }
     cast(MagicMock, ingestor.store.get_json).side_effect = Exception("Not found")
-    mock_session.get.return_value.json.return_value = races_data
 
     with patch.object(ingestor, "ingest_endpoint") as mock_ingest:
-        ingestor.run_full_extraction(season=2020, batch_id="b1")
+        mock_session.get.return_value.json.return_value = races_data_no_sprint
+        ingestor.run_full_extraction(season=2024, batch_id="b1")
         endpoints_called = [call[0][0] for call in mock_ingest.call_args_list]
         assert "sprint" not in endpoints_called
 
     with patch.object(ingestor, "ingest_endpoint") as mock_ingest:
-        ingestor.run_full_extraction(season=2021, batch_id="b1")
+        mock_session.get.return_value.json.return_value = races_data_with_sprint
+        ingestor.run_full_extraction(season=2024, batch_id="b1")
         endpoints_called = [call[0][0] for call in mock_ingest.call_args_list]
         assert "sprint" in endpoints_called
 

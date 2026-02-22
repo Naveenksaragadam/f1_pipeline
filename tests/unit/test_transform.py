@@ -168,8 +168,26 @@ def test_process_object_empty_df_warning(mock_stores: tuple[MagicMock, MagicMock
     # Mock extract_records to return something, but process_batch to return empty
     with patch.object(transformer, "_extract_records", return_value=[{"some": "data"}]):
         with patch.object(transformer, "process_batch", return_value=pl.DataFrame()):
-            transformer.process_object("source.json", "target.parquet")
+            with pytest.raises(ValueError) as excinfo:
+                transformer.process_object("source.json", "target.parquet")
+            assert "Data Quality Error" in str(excinfo.value)
             silver_store.put_object.assert_not_called()
+
+
+def test_process_object_empty_post_complex_types(mock_stores: tuple[MagicMock, MagicMock]) -> None:
+    """Test Data Quality error when DataFrame becomes empty after explode/unnest operations."""
+    bronze_store, silver_store = mock_stores
+    transformer = F1Transformer(bronze_store, silver_store, SimpleSchema)
+
+    # Mock extract_records to return something so we pass the first check
+    with patch.object(transformer, "_extract_records", return_value=[{"some": "data"}]):
+        # Mock process_batch to return a valid DF with 1 row so we pass the first empty check
+        valid_df = pl.DataFrame({"some": ["data"]})
+        with patch.object(transformer, "process_batch", return_value=valid_df):
+            # Then mock _process_complex_types to somehow return an empty DataFrame
+            with patch.object(transformer, "_process_complex_types", return_value=pl.DataFrame()):
+                with pytest.raises(ValueError, match="Transformation resulted in an empty DataFrame"):
+                    transformer.process_object("source.json", "target.parquet")
 
 
 def test_process_object_full_workflow(mock_stores: tuple[MagicMock, MagicMock]) -> None:

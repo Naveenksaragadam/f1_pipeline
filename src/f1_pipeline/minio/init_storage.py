@@ -55,16 +55,4 @@ def initialize_buckets() -> None:
 
 
 if __name__ == "__main__":
-    # initialize_buckets()
-    # print(MINIO_ENDPOINT)
-    store = F1ObjectStore(
-        bucket_name=MINIO_BUCKET_BRONZE,
-        endpoint_url=MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
-    )
-    store.create_bucket_if_not_exists()
-    objects = store.list_objects("ergast/endpoint=constructors")
-    object = objects[0]
-    print(object)
-    print(store.get_json(object))
+    initialize_buckets()
