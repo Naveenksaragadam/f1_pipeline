@@ -89,8 +89,12 @@ def run_transformation(**kwargs: Any) -> None:
 
     Workflow:
     - Scans the Bronze bucket for the specific season's JSON files.
-    - Applies factory-driven schemas for the relevant endpoints.
+    - Reference endpoints (seasons, status) have no season partition so they
+      are scanned from the root prefix.
+    - Applies factory-driven schemas per endpoint.
     - Validates, flattens, and writes to Silver as Parquet.
+    - Per-file failures are isolated so a single bad object doesn't abort
+      the entire season's transformation.
 
     Args:
         **kwargs: Standard Airflow context.
@@ -98,6 +102,9 @@ def run_transformation(**kwargs: Any) -> None:
     Raises:
         AirflowException: Triggers Airflow retry logic if transformation fails.
     """
+    # Endpoints whose Bronze files are not partitioned by season (global reference data)
+    GLOBAL_ENDPOINTS = {"seasons", "status"}
+
     try:
         logical_date = kwargs["logical_date"]
         season_year = logical_date.year
@@ -121,30 +128,62 @@ def run_transformation(**kwargs: Any) -> None:
         )
         silver_store.create_bucket_if_not_exists()
 
-        total_files = 0
+        total_success = 0
+        total_errors = 0
 
         # Dynamic Endpoint Processing via TRANSFORM_FACTORY
         for endpoint, schema in TRANSFORM_FACTORY.items():
-            logger.info(f"🔄 Syncing '{endpoint}' schema...")
+            logger.info(f"🔄 Processing endpoint: '{endpoint}'...")
 
             transformer = F1Transformer(
                 bronze_store=bronze_store, silver_store=silver_store, schema_class=schema
             )
 
-            prefix = f"ergast/endpoint={endpoint}/season={season_year}/"
+            # Route to correct Bronze prefix — global endpoints have no season partition
+            if endpoint in GLOBAL_ENDPOINTS:
+                prefix = f"ergast/endpoint={endpoint}/"
+            else:
+                prefix = f"ergast/endpoint={endpoint}/season={season_year}/"
+
             source_objects = bronze_store.list_objects(prefix=prefix)
 
             if not source_objects:
-                logger.warning(f"  ⚠️ No raw data found for {endpoint} in season {season_year}")
+                logger.warning(f"  ⚠️ No Bronze data found for '{endpoint}' (prefix: {prefix})")
                 continue
 
+            logger.info(f"  📂 Found {len(source_objects)} objects to transform.")
+
+            ep_success = 0
+            ep_errors = 0
             for source_key in source_objects:
-                target_key = source_key.replace(".json", ".parquet")
-                transformer.process_object(source_key, target_key)
-                total_files += 1
+                try:
+                    target_key = source_key.replace(".json", ".parquet")
+                    transformer.process_object(source_key, target_key)
+                    ep_success += 1
+                except Exception as e:
+                    ep_errors += 1
+                    logger.error(f"  ❌ Failed to transform '{source_key}': {e}")
 
-        logger.info(f"🏁 Silver Transformation Complete. Synced {total_files} files.")
+            total_success += ep_success
+            total_errors += ep_errors
+            logger.info(f"  ✅ '{endpoint}' done — {ep_success} written, {ep_errors} errors.")
 
+        logger.info(
+            f"\n{'=' * 70}\n"
+            f"🏁 Silver Transformation Complete.\n"
+            f"   Files written : {total_success}\n"
+            f"   Files failed  : {total_errors}\n"
+            f"{'=' * 70}"
+        )
+
+        if total_errors > 0:
+            raise AirflowException(
+                f"Silver transformation completed with {total_errors} file-level errors. "
+                "Check task logs for details."
+            )
+
+    except AirflowException:
+        raise
     except Exception as e:
         logger.error(f"❌ Transformation task failed: {e}", exc_info=True)
         raise AirflowException(f"F1 Transformation failed: {e}") from e

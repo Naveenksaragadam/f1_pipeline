@@ -242,7 +242,7 @@ docker-compose exec airflow-scheduler \
 # List Bronze layer files
 docker-compose exec airflow-scheduler python -c "
 from f1_pipeline.minio.object_store import F1ObjectStore
-from f1_pipeline.ingestion.config import *
+from f1_pipeline.config import MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 store = F1ObjectStore(MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
 objects = store.list_objects('ergast/endpoint=races')
 print(f'Found {len(objects)} files')
@@ -358,10 +358,10 @@ print(f"API calls: {summary['api_calls_made']}")
 
 ```python
 with DAG(
-    dag_id="f1_pipeline",
-    schedule_interval="@yearly",  # Change to "@daily" for incremental
+    dag_id="f1_production_pipeline",
+    schedule="@yearly",           # Change to "@daily" for incremental
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
-    catchup=True,  # Set False to skip historical runs
+    catchup=True,                 # Set False to skip historical runs
     ...
 ) as dag:
     ...
@@ -377,16 +377,13 @@ with DAG(
 # Format code
 make format
 
-# Run linters
-make lint
-
-# Type checking
-make type-check
+# Run linters + type check
+make check
 
 # Run tests
 make test
 
-# Run with coverage
+# Run tests with coverage report
 make test-cov
 ```
 
@@ -435,9 +432,11 @@ for endpoint in ["results", "qualifying", "your_endpoint"]:
     self.ingest_endpoint(endpoint, batch_id, season=season, round_num=round_num)
 ```
 
-1. **Create Pydantic schema** in `transform/schemas.py`
+1. **Update `transform/schemas.py`** — Create a Pydantic schema
 
-2. **Add tests** in `tests/test_ingestor.py`
+2. **Register in `transform/factory.py`** — Add to `TRANSFORM_FACTORY`
+
+3. **Add tests** in `tests/unit/test_ingestor.py` and `tests/unit/test_transform.py`
 
 ---
 
@@ -666,7 +665,10 @@ for details.
 - [x] Parquet transformation (Polars)
 - [x] Schema validation (Pydantic)
 - [x] Auto-explosion of nested lists
-- [x] Recursive flattening
+- [x] Recursive struct flattening
+- [x] Wired into Airflow DAG (`transform_season_data` task)
+- [x] Global endpoint routing (seasons/status without season partition)
+- [x] Per-file error isolation
 
 ### Phase 3: Gold Layer (In Progress)
 
