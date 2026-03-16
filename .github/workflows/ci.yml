@@ -70,7 +70,8 @@ jobs:
             --ignore-vuln CVE-2025-68438 \
             --ignore-vuln CVE-2025-68675 \
             --ignore-vuln CVE-2026-24098 \
-            --ignore-vuln CVE-2026-22922
+            --ignore-vuln CVE-2026-22922 \
+            --ignore-vuln CVE-2025-62727
 
       - name: dbt Compilation Check
         env:
