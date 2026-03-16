@@ -60,7 +60,7 @@ jobs:
 
       - name: Verify Dependency Sync (pyproject.toml -> requirements.txt)
         run: |
-          uv pip compile pyproject.toml --no-header -o requirements.txt.tmp
+          uv pip compile pyproject.toml --no-header --universal -o requirements.txt.tmp
           # Compare content while ignoring the first few lines of header if they exist
           diff <(grep -v "^#" requirements.txt) <(grep -v "^#" requirements.txt.tmp) || (echo "requirements.txt is out of sync with pyproject.toml. Run 'uv pip compile pyproject.toml -o requirements.txt' locally." && exit 1)
           rm requirements.txt.tmp
