@@ -73,6 +73,7 @@ dev = [
     "mypy>=1.0.0",
     "types-requests",
     "pip-audit>=2.10.0",
+    "pre-commit>=4.1.0",
 ]
 
 [tool.coverage.run]

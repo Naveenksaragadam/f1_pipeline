@@ -55,8 +55,14 @@ jobs:
           rm -f .coverage
           uv run pytest tests/ --cov=src/f1_pipeline --cov-fail-under=100
 
-      - name: Export requirements for Dependency Audit
-        run: uv pip compile pyproject.toml -o requirements.txt
+      - name: Verify Lockfile Sync
+        run: uv lock --check
+
+      - name: Verify Dependency Sync (pyproject.toml -> requirements.txt)
+        run: |
+          uv pip compile pyproject.toml -o requirements.txt.tmp
+          diff requirements.txt requirements.txt.tmp || (echo "requirements.txt is out of sync with pyproject.toml. Run 'uv pip compile pyproject.toml -o requirements.txt' locally." && exit 1)
+          rm requirements.txt.tmp
         
       - name: Dependency Vulnerability Scanning (pip-audit)
         run: |

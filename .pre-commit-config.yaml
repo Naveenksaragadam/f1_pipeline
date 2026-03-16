@@ -1,0 +1,19 @@
+repos:
+  - repo: local
+    hooks:
+      - id: uv-pip-compile
+        name: Sync requirements.txt
+        description: Automatically regenerate requirements.txt when pyproject.toml changes.
+        entry: uv pip compile pyproject.toml -o requirements.txt
+        language: system
+        files: ^pyproject.toml$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: uv-lock-check
+        name: Check uv.lock sync
+        description: Ensure uv.lock is in sync with pyproject.toml.
+        entry: uv lock --check
+        language: system
+        files: ^(pyproject.toml|uv.lock)$
+        pass_filenames: false
+        stages: [pre-commit]
