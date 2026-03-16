@@ -67,26 +67,7 @@ jobs:
         
       - name: Dependency Vulnerability Scanning (pip-audit)
         run: |
-          # apache-airflow CVEs require >=3.1.7 which conflicts with astronomer-cosmos's
-          # fastapi/starlette ceiling. These are Airflow UI/auth issues; not applicable to
-          # our batch pipeline. Tracked in: https://github.com/Naveenksaragadam/f1_pipeline/issues
-          uv run pip-audit -r requirements.txt \
-            --ignore-vuln CVE-2024-53382 \
-            --ignore-vuln CVE-2025-13465 \
-            --ignore-vuln CVE-2025-59057 \
-            --ignore-vuln CVE-2025-62402 \
-            --ignore-vuln CVE-2025-62503 \
-            --ignore-vuln CVE-2025-66388 \
-            --ignore-vuln CVE-2025-66400 \
-            --ignore-vuln CVE-2025-68438 \
-            --ignore-vuln CVE-2025-68470 \
-            --ignore-vuln CVE-2025-68675 \
-            --ignore-vuln CVE-2026-21884 \
-            --ignore-vuln CVE-2026-22029 \
-            --ignore-vuln CVE-2026-22030 \
-            --ignore-vuln CVE-2026-22922 \
-            --ignore-vuln CVE-2026-24098 \
-            --ignore-vuln CVE-2026-25639
+          uv run pip-audit -r requirements.txt
 
       - name: dbt Compilation Check
         env:
