@@ -87,7 +87,7 @@ asgiref==3.11.1
     #   apache-airflow-core
     #   apache-airflow-providers-common-compat
     #   apache-airflow-task-sdk
-astronomer-cosmos==1.13.0
+astronomer-cosmos==1.13.1
     # via f1-pipeline (pyproject.toml)
 attrs==25.4.0
     # via
@@ -164,11 +164,11 @@ dbt-adapters==1.22.5
     #   dbt-core
 dbt-clickhouse==1.10.0
     # via f1-pipeline (pyproject.toml)
-dbt-common==1.37.2
+dbt-common==1.37.3
     # via
     #   dbt-adapters
     #   dbt-core
-dbt-core==1.11.6
+dbt-core==1.11.7
     # via
     #   f1-pipeline (pyproject.toml)
     #   dbt-clickhouse
