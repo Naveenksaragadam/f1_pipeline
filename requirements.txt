@@ -132,7 +132,7 @@ certifi==2025.11.12
     #   httpcore
     #   httpx
     #   requests
-cffi==2.0.0
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.4.4
     # via
@@ -155,6 +155,8 @@ clickhouse-driver==0.2.10
     # via dbt-clickhouse
 colorama==0.4.6
     # via
+    #   click
+    #   colorlog
     #   dbt-common
     #   flask-appbuilder
 colorlog==6.10.1
@@ -278,6 +280,8 @@ googleapis-common-protos==1.73.0
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
+greenlet==3.3.2 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
+    # via sqlalchemy
 grpcio==1.78.0
     # via opentelemetry-exporter-otlp-proto-grpc
 gunicorn==25.1.0
@@ -515,7 +519,7 @@ psutil==7.2.2
     # via apache-airflow
 pyarrow==22.0.0
     # via f1-pipeline (pyproject.toml)
-pycparser==3.0
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.12.5
     # via
@@ -702,8 +706,10 @@ typing-inspection==0.4.2
 tzdata==2025.3
     # via
     #   f1-pipeline (pyproject.toml)
+    #   agate
     #   pandas
     #   pendulum
+    #   tzlocal
 tzlocal==5.3.1
     # via clickhouse-driver
 uc-micro-py==2.0.0
