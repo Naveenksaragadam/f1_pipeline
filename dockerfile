@@ -11,4 +11,7 @@ COPY requirements.txt /requirements.txt
 USER airflow
 
 # Install dependencies using the pinned file
-RUN pip install --no-cache-dir -r /requirements.txt
+# --no-deps is used because requirements.txt is a full, universal resolution from uv.
+# This bypasses strict pip resolution checks for transitive conflicts (e.g. Starlette)
+# that are already handled by our uv overrides.
+RUN pip install --no-cache-dir --no-deps -r /requirements.txt
