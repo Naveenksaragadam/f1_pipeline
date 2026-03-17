@@ -58,7 +58,7 @@ docker-shell-airflow:
 
 requirements:
 	@echo "Exporting requirements.txt..."
-	uv pip compile pyproject.toml -o requirements.txt
+	uv pip compile pyproject.toml --universal -o requirements.txt
 	@echo "requirements.txt updated."
 
 clean: ## Clean up local cache and temporary files
