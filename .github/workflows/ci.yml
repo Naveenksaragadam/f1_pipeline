@@ -65,9 +65,10 @@ jobs:
           diff <(grep -v "^#" requirements.txt) <(grep -v "^#" requirements.txt.tmp) || (echo "requirements.txt is out of sync with pyproject.toml. Run 'uv pip compile pyproject.toml --universal -o requirements.txt' locally or use 'bash scripts/sync-deps.sh'." && exit 1)
           rm requirements.txt.tmp
         
-      - name: Dependency Vulnerability Scanning (pip-audit)
+      - name: Security audit
         run: |
-          uv run pip-audit -r requirements.txt
+          uv sync
+          uv run pip-audit --local
 
       - name: dbt Compilation Check
         env:
