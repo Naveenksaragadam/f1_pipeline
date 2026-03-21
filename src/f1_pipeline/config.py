@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # --- ENV LOADING ---
 _env_found = load_dotenv(find_dotenv())
 if not _env_found:
-    logger.info("ℹ️  No .env file found. Using environment variables from system/Docker.")
+    logger.debug("ℹ️  No .env file found. Using environment variables from system/Docker.")
 
 
 def get_env_required(key: str) -> str:
