@@ -120,8 +120,8 @@ real-world production deployments.
 
 | Component             | Technology              | Purpose                               |
 | --------------------- | ----------------------- | ------------------------------------- |
-| **Orchestration**     | Apache Airflow 3.1.7    | 2026 FAANG-grade DAG management       |
-| **dbt Management**    | Astronomer Cosmos       | Granular dbt observability            |
+| **Orchestration**     | Apache Airflow 3.1.8    | Modern AI-augmented orchestration     |
+| **dbt Management**    | Astronomer Cosmos 1.13  | Granular dbt observability            |
 | **Storage**           | MinIO (S3-compatible)   | Object storage (Bronze/Silver layers) |
 | **Transformation**    | Python 3.12 + Polars    | High-performance data processing      |
 | **Data Warehouse**    | ClickHouse 24.3         | High-performance OLAP database        |
@@ -677,12 +677,14 @@ for details.
 - [x] Global endpoint routing (seasons/status without season partition)
 - [x] Per-file error isolation
 
-### Phase 3: Gold Layer (In Progress)
+### Phase 3: Gold Layer (dbt Dimensional Models) ✅
 
 - [x] Astronomer Cosmos integration
-- [ ] dbt fact & dimension models
-- [ ] SCD Type 2 implementation
-- [ ] Materialized views
+- [x] dbt staging models (Silver Parquet → View)
+- [x] dbt dimension models (SCD logic, enrichment)
+- [x] dbt fact models (Analytical grain)
+- [x] Materialized views & performance tuning
+- [x] Data documentation & testing
 
 ### Phase 4: Analytics (Future)
 
