@@ -41,9 +41,21 @@ models:
         +tags: ['base', 'staging']
       
       # Staging tables (materialized)
-      +schema: silver            # Creates silver.stg_*
-      +materialized: table       # Default: materialize as table
+      +schema: staging           # Creates staging.stg_*
+      +materialized: view        # Views — ephemeral reads from S3
       +tags: ['staging']
+    
+    gold:
+      # Dimension tables
+      dimensions:
+        +schema: gold            # Creates gold.dim_*
+        +materialized: table     # Materialized for query performance
+        +tags: ['gold', 'dimension']
+      # Fact tables
+      facts:
+        +schema: gold            # Creates gold.fct_*
+        +materialized: table     # Materialized for query performance
+        +tags: ['gold', 'fact']
       
 vars:
   # MinIO connection
