@@ -21,7 +21,7 @@ def test_config_reload_no_env(caplog: pytest.LogCaptureFixture) -> None:
     """Test module initialization when .env is not found (covers line 21)."""
     import importlib
 
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
 
     # Patch at the source so the 'from dotenv import load_dotenv' pulls the mock
     with patch("dotenv.load_dotenv", return_value=False):
