@@ -824,6 +824,7 @@ for details.
 
 - [ ] **Prometheus** — Instrument Airflow, ClickHouse, and MinIO with metrics exporters
 - [ ] **Grafana** — Operational dashboards for pipeline health (DAG success rate, task durations, data freshness SLA)
+- [ ] **Data Quality Dashboard** — Track `dbt test` results over time to monitor schema regressions and data anomalies
 - [ ] **Alerting** — PagerDuty/Slack integration via Grafana alerting rules (e.g., DAG failure, data staleness > 24h)
 
 #### 4b — Business Intelligence (Superset)
@@ -842,6 +843,12 @@ for details.
 - [ ] ML feature engineering from Gold layer (driver form, constructor reliability index)
 - [ ] Real-time lap-time prediction model
 - [ ] Weather impact correlation analysis
+
+### Phase 5: Engineering Excellence (Continuous)
+
+- [ ] **Unified Analytics Stack** — Add Prometheus, Grafana, and Superset to `docker-compose.yaml` for one-command environment setup
+- [ ] **CI/CD Quality Gates** — Implement GitHub Actions to run `dbt build --select tag:gold` on every Pull Request
+- [ ] **Infrastructure as Code** — Move manual configurations to Terraform/OpenTofu
 
 <!-- markdownlint-enable MD013 -->
 
