@@ -121,54 +121,54 @@ real-world production deployments.
 ```mermaid
 erDiagram
     %% --- TOP DIMENSIONS ---
-    dim_circuits["dim_circuits (Mint)"] {
+    dim_circuits["dim_circuits"] {
         String circuit_id PK
         String circuit_name
     }
-    dim_status["dim_status (Mint)"] {
+    dim_status["dim_status"] {
         Int status_id PK
         String status_text
     }
 
     %% --- CENTRAL FACT HUB ---
-    fct_race_results["fct_race_results (Rose)"] {
+    fct_race_results["fct_race_results "] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
         Float points
     }
-    fct_qualifying["fct_qualifying (Rose)"] {
+    fct_qualifying["fct_qualifying "] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
     }
-    fct_sprint_results["fct_sprint_results (Rose)"] {
+    fct_sprint_results["fct_sprint_results"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
     }
-    fct_lap_times["fct_lap_times (Rose)"] {
+    fct_lap_times["fct_lap_times"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int lap
     }
-    fct_pit_stops["fct_pit_stops (Rose)"] {
+    fct_pit_stops["fct_pit_stops"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int stop
     }
-    fct_driver_standings["fct_driver_standings (Rose)"] {
+    fct_driver_standings["fct_driver_standings"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int points
     }
-    fct_constructor_standings["fct_constructor_standings (Rose)"] {
+    fct_constructor_standings["fct_constructor_standings"] {
         UInt16 season FK
         UInt8 round FK
         String constructor_id FK
@@ -176,17 +176,17 @@ erDiagram
     }
 
     %% --- BOTTOM/SIDE DIMENSIONS ---
-    dim_races["dim_races (Mint)"] {
+    dim_races["dim_races"] {
         UInt16 season PK
         UInt8 round PK
         String race_name
     }
-    dim_drivers["dim_drivers (Mint)"] {
+    dim_drivers["dim_drivers"] {
         String driver_id PK
         String full_name
         String code
     }
-    dim_constructors["dim_constructors (Mint)"] {
+    dim_constructors["dim_constructors"] {
         String constructor_id PK
         String name
     }
