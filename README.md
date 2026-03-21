@@ -120,7 +120,8 @@ real-world production deployments.
 
 ```mermaid
 erDiagram
-    dim_drivers {
+    %% --- DIMENSIONS ---
+    dim_drivers["dim_drivers (Mint)"] {
         String driver_id PK
         String full_name
         Int permanent_number
@@ -128,12 +129,12 @@ erDiagram
         String nationality
         Date date_of_birth
     }
-    dim_constructors {
+    dim_constructors["dim_constructors (Mint)"] {
         String constructor_id PK
         String name
         String nationality
     }
-    dim_circuits {
+    dim_circuits["dim_circuits (Mint)"] {
         String circuit_id PK
         String circuit_name
         Float lat
@@ -141,86 +142,83 @@ erDiagram
         String locality
         String country
     }
-    dim_races {
+    dim_races["dim_races (Mint)"] {
         UInt16 season PK
         UInt8 round PK
         String race_name
         String circuit_id FK
         Date race_date
     }
-    dim_status {
+    dim_status["dim_status (Mint)"] {
         Int status_id PK
         String status_text
         Bool is_classified
     }
 
-    fct_race_results {
+    %% --- FACTS ---
+    fct_race_results["fct_race_results (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         String constructor_id FK
         Int finish_position
         Float points
-        Int positions_gained
     }
-    fct_qualifying {
+    fct_qualifying["fct_qualifying (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         String constructor_id FK
         Int qualifying_position
-        String best_qualifying_time
     }
-    fct_pit_stops {
+    fct_pit_stops["fct_pit_stops (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int stop_number
-        String duration_raw
     }
-    fct_lap_times {
+    fct_lap_times["fct_lap_times (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int lap_number
         Int track_position
-        String lap_time
     }
-    fct_sprint_results {
+    fct_sprint_results["fct_sprint_results (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         String constructor_id FK
         Int finish_position
-        Int positions_gained
     }
-    fct_driver_standings {
+    fct_driver_standings["fct_driver_standings (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
         Float points
-        Int wins
     }
-    fct_constructor_standings {
+    fct_constructor_standings["fct_constructor_standings (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String constructor_id FK
         Int position
         Float points
-        Int wins
     }
 
+    %% --- RELATIONSHIPS ---
     dim_drivers ||--o{ fct_race_results : "driver_id"
     dim_drivers ||--o{ fct_qualifying : "driver_id"
     dim_drivers ||--o{ fct_pit_stops : "driver_id"
     dim_drivers ||--o{ fct_lap_times : "driver_id"
     dim_drivers ||--o{ fct_sprint_results : "driver_id"
     dim_drivers ||--o{ fct_driver_standings : "driver_id"
+
     dim_constructors ||--o{ fct_race_results : "constructor_id"
     dim_constructors ||--o{ fct_qualifying : "constructor_id"
     dim_constructors ||--o{ fct_sprint_results : "constructor_id"
     dim_constructors ||--o{ fct_constructor_standings : "constructor_id"
+
     dim_races ||--o{ fct_race_results : "season, round"
     dim_races ||--o{ fct_qualifying : "season, round"
     dim_races ||--o{ fct_pit_stops : "season, round"
@@ -228,6 +226,7 @@ erDiagram
     dim_races ||--o{ fct_sprint_results : "season, round"
     dim_races ||--o{ fct_driver_standings : "season, round"
     dim_races ||--o{ fct_constructor_standings : "season, round"
+
     dim_circuits ||--o{ dim_races : "circuit_id"
 ```
 
