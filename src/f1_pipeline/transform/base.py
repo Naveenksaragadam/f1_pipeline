@@ -115,18 +115,12 @@ class F1Transformer:
         Dynamically locate the actual data rows within the nested JSON payload.
 
         API responses from Ergast are often deeply nested (e.g., MRData -> RaceTable -> Races -> Results).
-        This method uses a recursive heuristic to find lists of objects. It respects the
-        nesting depth expected by the schema class.
+        This method uses a heuristic to unwrap known wrapper lists ('Races', 'StandingsLists')
+        and extract the deepest target lists ('Results', 'Qualifying', 'DriverStandings', etc.).
         """
         data_root = raw_data.get("data", {}).get("MRData", raw_data)
 
         def _find_first_list_of_dicts(obj: Any) -> list[dict[str, Any]] | None:
-            """Recursively find the first list whose first element is a dict.
-
-            Returns early on the first match — avoids allocating all nested lists
-            upfront. The outermost list of dicts is always our target because our
-            Pydantic schemas handle internal nesting (e.g., LapSchema contains Timings).
-            """
             if isinstance(obj, list) and obj and isinstance(obj[0], dict):
                 return obj  # type: ignore[return-value]
             if isinstance(obj, dict):
@@ -136,8 +130,35 @@ class F1Transformer:
                         return result
             return None
 
-        result = _find_first_list_of_dicts(data_root)
-        return result if result is not None else []
+        first_list = _find_first_list_of_dicts(data_root)
+        if not first_list:
+            return []
+
+        # Check if the items in the first list are wrappers for deeper target arrays
+        TARGET_INNER_KEYS = {
+            "Results",
+            "QualifyingResults",
+            "SprintResults",
+            "PitStops",
+            "Laps",
+            "DriverStandings",
+            "ConstructorStandings",
+        }
+
+        # If the first item in the list contains any of the target inner keys,
+        # we must extract and flatten those inner lists instead of returning the wrapper.
+        if isinstance(first_list[0], dict):
+            inner_keys_present = TARGET_INNER_KEYS.intersection(first_list[0].keys())
+            if inner_keys_present:
+                target_key = list(inner_keys_present)[0]
+                flat_records = []
+                for wrapper in first_list:
+                    inner_list = wrapper.get(target_key, [])
+                    if isinstance(inner_list, list):
+                        flat_records.extend(inner_list)
+                return flat_records
+
+        return first_list
 
     def process_batch(self, records: list[dict[str, Any]]) -> pl.DataFrame:
         """
