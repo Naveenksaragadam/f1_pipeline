@@ -40,6 +40,8 @@ models:
         tests:
           - unique
           - not_null
+      - name: circuit_name
+        description: "Official circuit name"
       - name: lat
         description: "Latitude coordinate"
       - name: lng
@@ -84,6 +86,12 @@ models:
   - name: fct_race_results
     description: "Race results per driver per race — core analytics fact table"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         description: "FK to dim_drivers"
         tests:
@@ -102,6 +110,12 @@ models:
   - name: fct_qualifying
     description: "Qualifying results per driver per race"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         tests:
           - not_null
@@ -114,6 +128,12 @@ models:
   - name: fct_pit_stops
     description: "Pit stop events per driver per race"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         tests:
           - not_null
@@ -125,6 +145,12 @@ models:
   - name: fct_lap_times
     description: "Individual lap timing data — the largest fact table"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         tests:
           - not_null
@@ -139,6 +165,12 @@ models:
   - name: fct_sprint_results
     description: "Sprint race results per driver"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         tests:
           - not_null
@@ -151,25 +183,37 @@ models:
   - name: fct_driver_standings
     description: "Driver championship standings per round"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: driver_id
         tests:
           - not_null
-      - name: championship_position
+      - name: position
         description: "Standing position after this round"
-      - name: championship_points
+      - name: points
         description: "Accumulated points"
-      - name: season_wins
+      - name: wins
         description: "Total wins up to this round"
 
   - name: fct_constructor_standings
     description: "Constructor championship standings per round"
     columns:
+      - name: season
+        tests:
+          - not_null
+      - name: round
+        tests:
+          - not_null
       - name: constructor_id
         tests:
           - not_null
-      - name: championship_position
+      - name: position
         description: "Standing position after this round"
-      - name: championship_points
+      - name: points
         description: "Accumulated points"
-      - name: season_wins
+      - name: wins
         description: "Total wins up to this round"

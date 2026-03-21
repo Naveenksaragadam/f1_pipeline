@@ -1,9 +1,13 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "laps"]) }}
 
--- Laps are exploded: LapSchema.timings list is flattened with timings_ prefix
 select
-    assumeNotNull(number)                as lap_number,
-    assumeNotNull(timings_driver_id)     as driver_id,
-    timings_position      as position,
-    timings_time          as lap_time
-from {{ read_silver_parquet('laps') }}
+    -- Race context (from file path)
+    assumeNotNull(CAST(extract(_path, 'season=([0-9]+)'), 'UInt16')) as season,
+    assumeNotNull(CAST(extract(_path, 'round=([0-9]+)'), 'UInt8'))   as round,
+
+    assumeNotNull(timings_driver_id) as driver_id,
+    number as lap_number,
+    timings_position as position,
+    timings_time as time
+
+from {{ read_silver_parquet('laps', pattern='season=*/round=*/**/*.parquet') }}

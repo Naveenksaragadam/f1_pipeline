@@ -1,6 +1,6 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "constructors"]) }}
 
-select
+select distinct
     assumeNotNull(constructor_id) as constructor_id,
     name,
     nationality,

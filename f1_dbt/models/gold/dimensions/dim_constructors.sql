@@ -9,13 +9,25 @@
 
 {# dim_constructors: One row per unique constructor/team. #}
 
+with ranked_constructors as (
+    select
+        constructor_id,
+        name,
+        nationality,
+        url,
+        row_number() over (
+            partition by constructor_id
+            order by dbt_updated_at desc
+        ) as rn
+    from {{ ref('snp_constructors') }}
+    where dbt_valid_to is null
+)
+
 select
     constructor_id,
     name,
     nationality,
     url,
-    dbt_updated_at as _loaded_at,
-    dbt_valid_from,
-    dbt_scd_id
-from {{ ref('snp_constructors') }}
-where dbt_valid_to is null
+    now() as _loaded_at
+from ranked_constructors
+where rn = 1
