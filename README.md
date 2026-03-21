@@ -238,6 +238,8 @@ erDiagram
 | **Rate Limiting**     | requests-ratelimiter    | Client-side API throttling            |
 | **Metadata Store**    | PostgreSQL 13           | Airflow backend database              |
 | **Container Runtime** | Docker + Docker Compose | Local development environment         |
+| **Observability**     | Prometheus + Grafana    | Pipeline metrics & operational alerts |
+| **BI / Dashboards**   | Apache Superset         | Self-serve analytics on Gold layer    |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -814,12 +816,34 @@ for details.
 - [x] 35 data quality tests (`not_null`, `unique`) — all passing
 - [x] ClickHouse-specific optimizations (`allow_nullable_key`, schema inference)
 
-### Phase 4: Analytics (Future)
+<!-- markdownlint-disable MD013 -->
 
-- [ ] Apache Superset dashboards
-- [ ] Pre-built analytics queries
-- [ ] ML feature engineering
-- [ ] Real-time lap prediction
+### Phase 4: Observability & Analytics (Next)
+
+#### 4a — Pipeline Observability
+
+- [ ] **Prometheus** — Instrument Airflow, ClickHouse, and MinIO with metrics exporters
+- [ ] **Grafana** — Operational dashboards for pipeline health (DAG success rate, task durations, data freshness SLA)
+- [ ] **Alerting** — PagerDuty/Slack integration via Grafana alerting rules (e.g., DAG failure, data staleness > 24h)
+
+#### 4b — Business Intelligence (Superset)
+
+- [ ] **Apache Superset** — Connect directly to ClickHouse Gold layer for self-serve analytics
+- [ ] **Pre-built Dashboards**:
+  - Season Championship Tracker (Driver & Constructor standings over time)
+  - Race Weekend Deep-Dive (Qualifying vs Race vs Sprint performance)
+  - Pit Stop Strategy Analysis (Stop count, duration trends, undercut/overcut success)
+  - Lap Time Distribution (Box plots per driver per circuit)
+  - Historical Head-to-Head (Driver vs Driver across seasons)
+- [ ] **Saved SQL Queries** — Curated analytics queries for common F1 questions
+
+#### 4c — Advanced Analytics (Future)
+
+- [ ] ML feature engineering from Gold layer (driver form, constructor reliability index)
+- [ ] Real-time lap-time prediction model
+- [ ] Weather impact correlation analysis
+
+<!-- markdownlint-enable MD013 -->
 
 ---
 
