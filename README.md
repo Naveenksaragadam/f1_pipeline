@@ -242,8 +242,15 @@ docker-compose exec airflow-scheduler \
 # List Bronze layer files
 docker-compose exec airflow-scheduler python -c "
 from f1_pipeline.minio.object_store import F1ObjectStore
-from f1_pipeline.config import MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
-store = F1ObjectStore(MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
+from f1_pipeline.config import (
+    MINIO_BUCKET_BRONZE,
+    MINIO_ENDPOINT,
+    MINIO_ACCESS_KEY,
+    MINIO_SECRET_KEY,
+)
+store = F1ObjectStore(
+    MINIO_BUCKET_BRONZE, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+)
 objects = store.list_objects('ergast/endpoint=races')
 print(f'Found {len(objects)} files')
 print(objects[:5])

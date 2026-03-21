@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 from f1_pipeline.minio.object_store import F1ObjectStore
 
 # Test Constants
-DUMMY_CREDENTIAL = "unused"
+MOCK_VAL = "mock-value"
 
 
 @pytest.fixture
@@ -23,8 +23,8 @@ def store(mock_s3_client: MagicMock) -> F1ObjectStore:
     return F1ObjectStore(
         bucket_name="test-bucket",
         endpoint_url="http://mock-minio:9000",
-        access_key=os.getenv("MINIO_ACCESS_KEY", DUMMY_CREDENTIAL),
-        secret_key=os.getenv("MINIO_SECRET_KEY", DUMMY_CREDENTIAL),
+        access_key=os.getenv("MINIO_ACCESS_KEY", MOCK_VAL),
+        secret_key=os.getenv("MINIO_SECRET_KEY", MOCK_VAL),
         client=mock_s3_client,
     )
 
@@ -35,8 +35,8 @@ def test_init_creates_client_with_region(mock_env: Any) -> None:
         _ = F1ObjectStore(
             bucket_name="test",
             endpoint_url="http://url",
-            access_key=os.getenv("TEST_KEY", DUMMY_CREDENTIAL),
-            secret_key=os.getenv("TEST_SECRET", DUMMY_CREDENTIAL),
+            access_key=os.getenv("TEST_KEY", MOCK_VAL),
+            secret_key=os.getenv("TEST_SECRET", MOCK_VAL),
         )
         # Check if region_name was passed
         _, kwargs = mock_boto.call_args
@@ -51,8 +51,8 @@ def test_create_client_failure() -> None:
             _ = F1ObjectStore(
                 bucket_name="test",
                 endpoint_url="http://url",
-                access_key=DUMMY_CREDENTIAL,
-                secret_key=DUMMY_CREDENTIAL,
+                access_key=MOCK_VAL,
+                secret_key=MOCK_VAL,
             )
 
 
