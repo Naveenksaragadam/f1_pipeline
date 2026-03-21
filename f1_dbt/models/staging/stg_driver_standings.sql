@@ -2,12 +2,12 @@
 
 -- DriverStandingSchema: constructors list is exploded, then flattened
 select
-    position,
+    assumeNotNull(position) as position,
     points,
     wins,
 
     -- Driver
-    driver_driver_id          as driver_id,
+    assumeNotNull(driver_driver_id)          as driver_id,
     driver_code               as driver_code,
     driver_given_name         as driver_given_name,
     driver_family_name        as driver_family_name,

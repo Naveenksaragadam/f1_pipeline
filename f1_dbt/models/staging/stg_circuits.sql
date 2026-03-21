@@ -1,7 +1,7 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "circuits"]) }}
 
 select
-    circuit_id,
+    assumeNotNull(circuit_id) as circuit_id,
     name,
     url,
     location_lat     as lat,

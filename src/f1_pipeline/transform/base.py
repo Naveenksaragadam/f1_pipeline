@@ -99,8 +99,14 @@ class F1Transformer:
         # 6. Write to Parquet
         logger.info(f"💾 Writing {df.height} rows to Silver Layer: {target_key}")
 
+        # Cast purely Null columns to String to prevent ClickHouse Parquet schema inference errors
+        null_cols = [name for name, dtype in df.schema.items() if isinstance(dtype, pl.Null)]
+        if null_cols:
+            df = df.with_columns([pl.col(c).cast(pl.String) for c in null_cols])
+
         buffer = io.BytesIO()
         df.write_parquet(buffer)
+
         buffer.seek(0)
 
         self.silver_store.put_object(

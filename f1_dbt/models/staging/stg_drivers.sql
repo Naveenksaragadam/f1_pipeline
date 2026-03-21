@@ -1,7 +1,7 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "drivers"]) }}
 
 select
-    driver_id,
+    assumeNotNull(driver_id) as driver_id,
     permanent_number,
     code,
     given_name,
