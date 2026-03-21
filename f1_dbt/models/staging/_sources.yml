@@ -1,0 +1,37 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Cleaned, typed Parquet files from the Silver layer stored in MinIO"
+    meta:
+      owner: "data-engineering"
+      contains_pii: false
+      storage_format: "Parquet"
+      storage_location: "MinIO S3-compatible"
+    tables:
+      - name: seasons
+        description: "F1 season reference data (1950-present)"
+      - name: circuits
+        description: "F1 circuit data with location details"
+      - name: status
+        description: "Race finishing status codes"
+      - name: drivers
+        description: "F1 driver profiles per season"
+      - name: constructors
+        description: "F1 constructor/team profiles per season"
+      - name: races
+        description: "F1 race schedule/event data per season"
+      - name: results
+        description: "Race result records per driver per race"
+      - name: qualifying
+        description: "Qualifying session results per driver"
+      - name: sprint
+        description: "Sprint race results per driver"
+      - name: pitstops
+        description: "Pit stop events per driver per race"
+      - name: laps
+        description: "Individual lap timing data per driver"
+      - name: driverstandings
+        description: "Driver championship standings per round"
+      - name: constructorstandings
+        description: "Constructor championship standings per round"
