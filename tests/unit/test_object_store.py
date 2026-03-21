@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 from f1_pipeline.minio.object_store import F1ObjectStore
 
 # Test Constants
-MOCK_VAL = "mock-value"
+MOCK_VAL = "unused-test-value"
 
 
 @pytest.fixture
