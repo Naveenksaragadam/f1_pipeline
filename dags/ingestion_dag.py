@@ -11,7 +11,7 @@ from typing import Any
 import pendulum
 from airflow import DAG  # type: ignore
 from airflow.exceptions import AirflowException  # type: ignore
-from airflow.operators.python import PythonOperator  # type: ignore
+from airflow.providers.standard.operators.python import PythonOperator  # type: ignore
 from cosmos import (  # type: ignore
     DbtTaskGroup,
     ExecutionConfig,
@@ -201,29 +201,35 @@ default_args = {
 
 with DAG(
     dag_id="f1_production_pipeline",
-    description="Unified F1 Data Pipeline: Bronze (JSON) -> Silver (Parquet)",
+    description="Unified F1 Data Pipeline: Bronze (JSON) -> Silver (Parquet) -> Gold (Star Schema)",
     default_args=default_args,
     start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     schedule="@yearly",
     catchup=True,
     max_active_runs=1,
-    tags=["f1", "production", "polars", "pydantic"],
+    tags=["f1", "production", "polars", "pydantic", "dbt"],
     doc_md="""
     # F1 Production Data Pipeline
 
-    This DAG manages the full transformation lifecycle for Formula 1 data.
+    This DAG manages the full Medallion Architecture lifecycle for Formula 1 data.
 
     ## Architecture
-    1. **Bronze Layer (`extract_season_data`)**: Retrieves raw JSON from the Ergast API and stores it in MinIO.
+    1. **Bronze Layer (`extract_season_data`)**: Retrieves raw JSON from the Jolpica/Ergast API and stores it in MinIO.
        - Uses a `FORCE_REFRESH` policy for the current season.
     2. **Silver Layer (`transform_season_data`)**: Processes raw JSON into cleaned, flattened Parquet files.
        - Uses `Pydantic` for schema enforcement.
        - Uses `Polars` for efficient transformation and recursive flattening.
+    3. **Gold Layer (`gold_layer_dbt`)**: Builds a star schema in ClickHouse via dbt + Astronomer Cosmos.
+       - 5 dimension tables (drivers, constructors, circuits, races, status)
+       - 7 fact tables (race results, qualifying, pit stops, laps, sprints, driver/constructor standings)
+       - SCD Type 2 snapshots for driver and constructor dimensions
+       - 35 data quality tests (not_null, unique)
 
     ## Monitoring & Maintenance
     - **Logs**: Detailed execution summaries are logged in the task outputs.
     - **Backfills**: Can be re-run for any season between 2024 and 2026.
     """,
+    render_template_as_native_obj=True,
 ) as dag:
     ingest_task = PythonOperator(
         task_id="extract_season_data",
@@ -236,6 +242,7 @@ with DAG(
     )
 
     # --- Gold Layer (dbt) via Astronomer Cosmos ---
+    # Includes snapshots + staging (upstream deps) + gold models
     gold_layer = DbtTaskGroup(
         group_id="gold_layer_dbt",
         project_config=ProjectConfig(DBT_PROJECT_PATH),
@@ -245,7 +252,7 @@ with DAG(
             profiles_yml_filepath=f"{DBT_PROJECT_PATH}/profiles.yml",
         ),
         render_config=RenderConfig(
-            select=["path:models/gold"],  # Only run gold models for now
+            select=["path:models/gold", "path:snapshots"],
         ),
         execution_config=ExecutionConfig(
             dbt_executable_path="/home/airflow/.local/bin/dbt",

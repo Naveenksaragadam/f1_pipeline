@@ -3,17 +3,20 @@
         materialized="table",
         schema="gold",
         tags=["gold", "fact"],
-        order_by="(driver_id, constructor_id)"
+        order_by=["season", "round", "qualifying_position"],
+        settings={"allow_nullable_key": 1}
     )
 }}
 
 {#
     fct_qualifying: Qualifying session results per driver per race.
-    Grain: (driver_id, constructor_id) per qualifying session.
+    Grain: (season, round, driver_id) per qualifying session.
 #}
 
 select
     -- Foreign keys
+    season,
+    round,
     driver_id,
     constructor_id,
 

@@ -1,6 +1,10 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "sprint"]) }}
 
 select
+    -- Race context (from file path)
+    assumeNotNull(CAST(extract(_path, 'season=([0-9]+)'), 'UInt16')) as season,
+    assumeNotNull(CAST(extract(_path, 'round=([0-9]+)'), 'UInt8'))   as round,
+
     number,
     position,
     points,
@@ -22,4 +26,4 @@ select
     time_time                 as sprint_time,
     time_millis               as sprint_time_millis
 
-from {{ read_silver_parquet('sprint') }}
+from {{ read_silver_parquet('sprint', pattern='season=*/round=*/**/*.parquet') }}

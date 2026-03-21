@@ -1,31 +1,20 @@
-{{
-    config(
-        materialized="table",
-        schema="gold",
-        tags=["gold", "fact"],
-        order_by="(driver_id, championship_position)"
-    )
-}}
+{{ config(
+    materialized="table",
+    schema="gold",
+    tags=["gold", "fact"],
+    order_by=["season", "round", "position"],
+    settings={"allow_nullable_key": 1}
+) }}
 
-{#
-    fct_driver_standings: Driver championship standings per round.
-    Grain: (driver_id, constructor_id) per standings snapshot.
-    Note: constructors list is exploded in staging, so a driver who
-    raced for multiple teams in a season will have multiple rows.
-#}
+{# fct_driver_standings: Driver championship standings per round. #}
 
 select
-    -- Foreign keys
+    season,
+    round,
     driver_id,
     constructor_id,
-
-    -- Standing details
-    position            as championship_position,
-    points              as championship_points,
-    wins                as season_wins,
-
-    -- Metadata
+    position,
+    points,
+    wins,
     now() as _loaded_at
-
-from {{ ref('stg_driver_standings') }}
-where driver_id is not null and driver_id != ''
+from {{ ref("stg_driver_standings") }}

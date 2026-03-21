@@ -15,7 +15,7 @@
 with ranked_circuits as (
     select
         circuit_id,
-        name,
+        circuit_name,
         url,
         lat,
         lng,
@@ -23,7 +23,7 @@ with ranked_circuits as (
         country,
         row_number() over (
             partition by circuit_id
-            order by name
+            order by circuit_name asc
         ) as rn
     from {{ ref('stg_circuits') }}
     where circuit_id is not null and circuit_id != ''
@@ -31,7 +31,7 @@ with ranked_circuits as (
 
 select
     circuit_id,
-    name,
+    circuit_name,
     url,
     lat,
     lng,

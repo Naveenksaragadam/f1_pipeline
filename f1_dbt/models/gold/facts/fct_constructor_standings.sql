@@ -1,28 +1,19 @@
-{{
-    config(
-        materialized="table",
-        schema="gold",
-        tags=["gold", "fact"],
-        order_by="(constructor_id, championship_position)"
-    )
-}}
+{{ config(
+    materialized="table",
+    schema="gold",
+    tags=["gold", "fact"],
+    order_by=["season", "round", "position"],
+    settings={"allow_nullable_key": 1}
+) }}
 
-{#
-    fct_constructor_standings: Constructor championship standings per round.
-    Grain: (constructor_id) per standings snapshot.
-#}
+{# fct_constructor_standings: Constructor championship standings per round. #}
 
 select
-    -- Foreign keys
+    season,
+    round,
     constructor_id,
-
-    -- Standing details
-    position            as championship_position,
-    points              as championship_points,
-    wins                as season_wins,
-
-    -- Metadata
+    position,
+    points,
+    wins,
     now() as _loaded_at
-
-from {{ ref('stg_constructor_standings') }}
-where constructor_id is not null and constructor_id != ''
+from {{ ref("stg_constructor_standings") }}

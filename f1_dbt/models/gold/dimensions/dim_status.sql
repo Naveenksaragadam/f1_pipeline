@@ -12,8 +12,8 @@
     Relatively static reference data.
 #}
 
-select
-    status_id,
+select distinct
+    assumeNotNull(status_id) as status_id,
     status              as status_text,
     count               as occurrence_count,
     status = 'Finished' as is_classified,

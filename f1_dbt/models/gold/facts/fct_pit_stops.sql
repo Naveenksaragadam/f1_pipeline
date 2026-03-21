@@ -3,17 +3,20 @@
         materialized="table",
         schema="gold",
         tags=["gold", "fact"],
-        order_by="(driver_id, lap, stop_number)"
+        order_by=["season", "round", "driver_id", "stop_number"],
+        settings={"allow_nullable_key": 1}
     )
 }}
 
 {#
     fct_pit_stops: Pit stop events per driver per race.
-    Grain: (driver_id, lap, stop) per race.
+    Grain: (season, round, driver_id, stop) per race.
 #}
 
 select
     -- Foreign keys
+    season,
+    round,
     driver_id,
 
     -- Pit stop details

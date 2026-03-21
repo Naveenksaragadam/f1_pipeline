@@ -114,10 +114,130 @@ real-world production deployments.
 | **Silver** | Parquet    | Cleaned, typed, validated (via Polars)        | ✅ Active  |
 | **Gold**   | ClickHouse | Analytics-ready facts & dims (via dbt)        | ✅ Active  |
 
+### Gold Layer Star Schema
+
+<!-- markdownlint-disable MD013 -->
+
+```mermaid
+erDiagram
+    dim_drivers {
+        String driver_id PK
+        String full_name
+        Int permanent_number
+        String code
+        String nationality
+        Date date_of_birth
+    }
+    dim_constructors {
+        String constructor_id PK
+        String name
+        String nationality
+    }
+    dim_circuits {
+        String circuit_id PK
+        String circuit_name
+        Float lat
+        Float lng
+        String locality
+        String country
+    }
+    dim_races {
+        UInt16 season PK
+        UInt8 round PK
+        String race_name
+        String circuit_id FK
+        Date race_date
+    }
+    dim_status {
+        Int status_id PK
+        String status_text
+        Bool is_classified
+    }
+
+    fct_race_results {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        String constructor_id FK
+        Int finish_position
+        Float points
+        Int positions_gained
+    }
+    fct_qualifying {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        String constructor_id FK
+        Int qualifying_position
+        String best_qualifying_time
+    }
+    fct_pit_stops {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        Int stop_number
+        String duration_raw
+    }
+    fct_lap_times {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        Int lap_number
+        Int track_position
+        String lap_time
+    }
+    fct_sprint_results {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        String constructor_id FK
+        Int finish_position
+        Int positions_gained
+    }
+    fct_driver_standings {
+        UInt16 season FK
+        UInt8 round FK
+        String driver_id FK
+        Int position
+        Float points
+        Int wins
+    }
+    fct_constructor_standings {
+        UInt16 season FK
+        UInt8 round FK
+        String constructor_id FK
+        Int position
+        Float points
+        Int wins
+    }
+
+    dim_drivers ||--o{ fct_race_results : "driver_id"
+    dim_drivers ||--o{ fct_qualifying : "driver_id"
+    dim_drivers ||--o{ fct_pit_stops : "driver_id"
+    dim_drivers ||--o{ fct_lap_times : "driver_id"
+    dim_drivers ||--o{ fct_sprint_results : "driver_id"
+    dim_drivers ||--o{ fct_driver_standings : "driver_id"
+    dim_constructors ||--o{ fct_race_results : "constructor_id"
+    dim_constructors ||--o{ fct_qualifying : "constructor_id"
+    dim_constructors ||--o{ fct_sprint_results : "constructor_id"
+    dim_constructors ||--o{ fct_constructor_standings : "constructor_id"
+    dim_races ||--o{ fct_race_results : "season, round"
+    dim_races ||--o{ fct_qualifying : "season, round"
+    dim_races ||--o{ fct_pit_stops : "season, round"
+    dim_races ||--o{ fct_lap_times : "season, round"
+    dim_races ||--o{ fct_sprint_results : "season, round"
+    dim_races ||--o{ fct_driver_standings : "season, round"
+    dim_races ||--o{ fct_constructor_standings : "season, round"
+    dim_circuits ||--o{ dim_races : "circuit_id"
+```
+
+<!-- markdownlint-enable MD013 -->
+
 ---
 
 ## 🛠️ Technology Stack
 
+<!-- markdownlint-disable MD013 -->
 | Component             | Technology              | Purpose                               |
 | --------------------- | ----------------------- | ------------------------------------- |
 | **Orchestration**     | Apache Airflow 3.1.8    | Modern AI-augmented orchestration     |
@@ -264,7 +384,7 @@ print(objects[:5])
 ```text
 f1_pipeline/
 ├── dags/
-│   └── ingestion_dag.py          # Airflow DAG definition
+│   └── ingestion_dag.py          # Airflow DAG (Bronze → Silver → Gold)
 │
 ├── src/
 │   └── f1_pipeline/
@@ -285,17 +405,35 @@ f1_pipeline/
 │           ├── base.py           # Base transformer class
 │           ├── factory.py        # Transformer factory
 │           ├── run.py            # Transformation runner
-│           └── schemas.py        # Pydantic models
+│           └── schemas.py        # Pydantic models (13 endpoints)
+│
+├── f1_dbt/                        # dbt project — Gold Layer
+│   ├── dbt_project.yml           # dbt configuration
+│   ├── profiles.yml              # ClickHouse connection (dev/ci/prod)
+│   ├── macros/
+│   │   └── read_silver_parquet.sql  # S3 reader with partition extraction
+│   ├── models/
+│   │   ├── staging/              # Views on Silver Parquet (S3-backed)
+│   │   │   ├── stg_results.sql   # 11 staging models with season/round
+│   │   │   ├── _sources.yml      #   extraction from S3 paths
+│   │   │   └── ...
+│   │   └── gold/
+│   │       ├── dimensions/       # 5 dims (drivers, constructors, circuits,
+│   │       │   └── ...           #         races, status)
+│   │       ├── facts/            # 7 facts (results, qualifying, pit stops,
+│   │       │   └── ...           #          laps, sprints, standings ×2)
+│   │       └── _schema.yml       # 35 data quality tests
+│   └── snapshots/
+│       ├── snp_drivers.sql       # SCD Type 2 for drivers
+│       └── snp_constructors.sql  # SCD Type 2 for constructors
 │
 ├── tests/
-│   ├── test_ingestor.py          # Unit tests
-│   ├── test_object_store.py      # Storage tests
-│   └── conftest.py               # Pytest fixtures
-│
-├── docs/
-│   ├── architecture.md           # Detailed architecture
-│   ├── api_endpoints.md          # Endpoint documentation
-│   └── troubleshooting.md        # Common issues
+│   └── unit/
+│       ├── test_ingestor.py      # Ingestion unit tests
+│       ├── test_object_store.py  # Storage tests
+│       ├── test_transform.py     # Transformation tests
+│       ├── test_config.py        # Config tests
+│       └── conftest.py           # Pytest fixtures
 │
 ├── config/
 │   ├── clickhouse/
@@ -306,9 +444,9 @@ f1_pipeline/
 │
 ├── docker-compose.yaml           # Service definitions
 ├── Dockerfile                    # Airflow image build
-├── requirements.txt              # Python dependencies
+├── pyproject.toml                # Python project config (uv)
+├── requirements.txt              # Locked dependencies
 ├── .env.example                  # Example environment vars
-├── .gitignore                    # Git ignore patterns
 ├── Makefile                      # Development commands
 └── README.md                     # This file
 ```
@@ -677,15 +815,16 @@ for details.
 - [x] Global endpoint routing (seasons/status without season partition)
 - [x] Per-file error isolation
 
-### Phase 3: Gold Layer (dbt Dimensional Models) ✅
+### Phase 3: Gold Layer (dbt Star Schema) ✅
 
-- [x] Astronomer Cosmos integration
-- [x] dbt staging models (Silver Parquet → View)
-- [x] dbt dimension models (Record deduplication, enrichment)
-- [x] dbt fact models (Analytical grain)
-- [x] Materialized views & performance tuning
-- [x] Data documentation & testing
-- [x] SCD Type 2 implementation (Historical tracking)
+- [x] Astronomer Cosmos integration (28 Airflow tasks auto-generated)
+- [x] dbt staging models — 11 views on Silver Parquet via S3 engine
+- [x] Partition-aware `season`/`round` extraction from Hive-style S3 paths
+- [x] 5 dimension models with `ROW_NUMBER` deduplication
+- [x] 7 fact models with temporal context (`season`, `round` FK)
+- [x] SCD Type 2 snapshots for drivers & constructors
+- [x] 35 data quality tests (`not_null`, `unique`) — all passing
+- [x] ClickHouse-specific optimizations (`allow_nullable_key`, schema inference)
 
 ### Phase 4: Analytics (Future)
 

@@ -1,7 +1,10 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "results"]) }}
 
 select
-    -- Race context (from file path / parent record structure)
+    -- Race context (from file path)
+    assumeNotNull(CAST(extract(_path, 'season=([0-9]+)'), 'UInt16')) as season,
+    assumeNotNull(CAST(extract(_path, 'round=([0-9]+)'), 'UInt8'))   as round,
+
     number,
     position,
     points,
@@ -31,9 +34,9 @@ select
     fastest_lap_rank                      as fastest_lap_rank,
     fastest_lap_lap                       as fastest_lap_number,
     fastest_lap_time_time                 as fastest_lap_time,
-    fastest_lap_time_millis               as fastest_lap_millis,
+    -- fastest_lap_time_millis is missing in source schema
     fastest_lap_average_speed_speed       as fastest_lap_speed,
     fastest_lap_average_speed_units       as fastest_lap_speed_units
 
-from {{ read_silver_parquet('results') }}
+from {{ read_silver_parquet('results', pattern='season=*/round=*/**/*.parquet') }}
 settings input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference=1
