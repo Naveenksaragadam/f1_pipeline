@@ -250,6 +250,9 @@ def test_process_batch_custom_threshold(mock_stores: tuple[MagicMock, MagicMock]
     ]
     # Should NOT raise because 33% < 50%
     df = transformer.process_batch(records)
+    assert df.height == 4
+
+
 def test_process_object_null_series_cast(mock_stores: tuple[MagicMock, MagicMock]) -> None:
     """Verify that pure Null series are cast to String during process_object."""
     bronze, silver = mock_stores
