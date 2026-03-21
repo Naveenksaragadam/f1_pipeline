@@ -1,219 +1,212 @@
 version: 2
 
 models:
-  # ─── Dimension Models ───────────────────────────────────────────────
-  - name: dim_drivers
-    description: "One row per unique F1 driver across all seasons (1950-present)"
-    columns:
-      - name: driver_id
-        description: "Unique driver identifier (e.g., 'max_verstappen')"
-        tests:
-          - unique
-          - not_null
-      - name: full_name
-        description: "Computed: given_name + family_name"
-      - name: permanent_number
-        description: "Official racing number (may be null for historical drivers)"
-      - name: code
-        description: "Three-letter shorthand (e.g., 'VER')"
-      - name: nationality
-        description: "Standardized nationality string"
-
-  - name: dim_constructors
-    description: "One row per unique F1 constructor/team"
-    columns:
-      - name: constructor_id
-        description: "Unique constructor identifier (e.g., 'red_bull')"
-        tests:
-          - unique
-          - not_null
-      - name: name
-        description: "Official team name"
-      - name: nationality
-        description: "Team nationality"
+  # ===========================================================================
+  # 🏆 DIMENSION MODELS (The "Who", "Where", "What")
+  # ===========================================================================
 
   - name: dim_circuits
-    description: "One row per unique F1 circuit with geographic coordinates"
+    description: "Geographic and metadata for all F1 circuits (1950-present)"
     columns:
       - name: circuit_id
-        description: "Unique circuit identifier (e.g., 'spa')"
-        tests:
-          - unique
-          - not_null
+        description: "Primary Key: Unique identifier (e.g., 'spa')"
+        tests: [unique, not_null]
       - name: circuit_name
-        description: "Official circuit name"
+        description: "Official venue name"
       - name: lat
-        description: "Latitude coordinate"
+        description: "GPS Latitude"
       - name: lng
-        description: "Longitude coordinate"
+        description: "GPS Longitude"
       - name: locality
-        description: "City or town"
+        description: "City/Town location"
       - name: country
-        description: "Country name"
+        description: "Country location"
+
+  - name: dim_constructors
+    description: "Reference table for F1 teams/constructors"
+    columns:
+      - name: constructor_id
+        description: "Primary Key: Unique identifier (e.g., 'mclaren')"
+        tests: [unique, not_null]
+      - name: name
+        description: "Full team name"
+      - name: nationality
+        description: "Country of team registration"
+
+  - name: dim_drivers
+    description: "Master list of all F1 drivers (Deduplicated across snapshots)"
+    columns:
+      - name: driver_id
+        description: "Primary Key: Unique identifier (e.g., 'alonso')"
+        tests: [unique, not_null]
+      - name: full_name
+        description: "Combined Given + Family Name"
+      - name: permanent_number
+        description: "Official career number"
+      - name: code
+        description: "3-letter driver code (e.g., 'FA1')"
+      - name: nationality
+        description: "Driver nationality"
+      - name: date_of_birth
+        description: "Birth date (ISO format)"
 
   - name: dim_races
-    description: "One row per race event identified by (season, round)"
+    description: "Event metadata for every Grand Prix"
     columns:
       - name: season
-        description: "Calendar year of the season"
-        tests:
-          - not_null
+        description: "Year of the championship"
+        tests: [not_null]
       - name: round
-        description: "Round number within the season"
-        tests:
-          - not_null
+        description: "Chronological race number in the season"
+        tests: [not_null]
       - name: race_name
-        description: "Official race name (e.g., 'Monaco Grand Prix')"
+        description: "Official event name"
       - name: circuit_id
-        description: "FK to dim_circuits"
+        description: "Foreign Key: Linked to dim_circuits"
       - name: race_date
-        description: "Race date (YYYY-MM-DD)"
+        description: "Scheduled race date"
 
   - name: dim_status
-    description: "Race finishing status codes (e.g., 'Finished', 'Engine', 'Collision')"
+    description: "Reference for race finishing/retirement status codes"
     columns:
       - name: status_id
-        description: "Unique status identifier"
-        tests:
-          - unique
-          - not_null
+        description: "Primary Key: Unique id"
+        tests: [unique, not_null]
       - name: status_text
-        description: "Human-readable status"
+        description: "Human-readable status (e.g., 'Engine', '+1 Lap')"
       - name: is_classified
-        description: "Boolean: true if status is 'Finished'"
+        description: "Boolean: Whether the driver was classified in the final results"
 
-  # ─── Fact Models ────────────────────────────────────────────────────
-  - name: fct_race_results
-    description: "Race results per driver per race — core analytics fact table"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        description: "FK to dim_drivers"
-        tests:
-          - not_null
-      - name: constructor_id
-        description: "FK to dim_constructors"
-        tests:
-          - not_null
-      - name: finish_position
-        description: "Final finishing position"
-      - name: points
-        description: "Championship points awarded"
-      - name: positions_gained
-        description: "Derived: finish_position - grid_position"
-
-  - name: fct_qualifying
-    description: "Qualifying results per driver per race"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        tests:
-          - not_null
-      - name: constructor_id
-        tests:
-          - not_null
-      - name: best_qualifying_time
-        description: "Derived: coalesce(Q3, Q2, Q1)"
-
-  - name: fct_pit_stops
-    description: "Pit stop events per driver per race"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        tests:
-          - not_null
-      - name: stop_number
-        description: "Sequential stop number (1st, 2nd, etc.)"
-      - name: duration_raw
-        description: "Raw duration string from API (e.g., '23.456' or '1:23.456')"
-
-  - name: fct_lap_times
-    description: "Individual lap timing data — the largest fact table"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        tests:
-          - not_null
-      - name: lap_number
-        tests:
-          - not_null
-      - name: track_position
-        description: "Driver's position on track during this lap"
-      - name: lap_time
-        description: "Lap time string (e.g., '1:21.345')"
-
-  - name: fct_sprint_results
-    description: "Sprint race results per driver"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        tests:
-          - not_null
-      - name: constructor_id
-        tests:
-          - not_null
-      - name: positions_gained
-        description: "Derived: finish_position - grid_position"
-
-  - name: fct_driver_standings
-    description: "Driver championship standings per round"
-    columns:
-      - name: season
-        tests:
-          - not_null
-      - name: round
-        tests:
-          - not_null
-      - name: driver_id
-        tests:
-          - not_null
-      - name: position
-        description: "Standing position after this round"
-      - name: points
-        description: "Accumulated points"
-      - name: wins
-        description: "Total wins up to this round"
+  # ===========================================================================
+  # 📊 FACT MODELS (The "Numbers" and "Events")
+  # ===========================================================================
 
   - name: fct_constructor_standings
-    description: "Constructor championship standings per round"
+    description: "Cumulative team points and rankings per race"
     columns:
       - name: season
-        tests:
-          - not_null
+        description: "Year link to dim_races"
+        tests: [not_null]
       - name: round
-        tests:
-          - not_null
+        description: "Round link to dim_races"
+        tests: [not_null]
       - name: constructor_id
-        tests:
-          - not_null
+        description: "Foreign Key: Linked to dim_constructors"
+        tests: [not_null]
       - name: position
-        description: "Standing position after this round"
+        description: "Championship rank at this point in the season"
       - name: points
-        description: "Accumulated points"
+        description: "Total points accumulated"
       - name: wins
-        description: "Total wins up to this round"
+        description: "Total race wins in this season so far"
+
+  - name: fct_driver_standings
+    description: "Cumulative driver points and rankings per race"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: position
+        description: "Championship rank at this point in the season"
+      - name: points
+        description: "Total points accumulated"
+      - name: wins
+        description: "Total race wins in this season so far"
+
+  - name: fct_lap_times
+    description: "Individual performance per lap (High-volume telemetry fact)"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: lap_number
+        description: "Lap count relative to start"
+        tests: [not_null]
+      - name: track_position
+        description: "Positional ranking during this lap"
+      - name: lap_time
+        description: "Formatted lap time (e.g., 1:24.321)"
+
+  - name: fct_pit_stops
+    description: "Pit event timing and sequence"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: stop_number
+        description: "Sequence of the stop (1st, 2nd, etc.)"
+      - name: duration_raw
+        description: "Unformatted API duration string"
+
+  - name: fct_qualifying
+    description: "Grid positions and session performance"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: constructor_id
+        description: "Foreign Key: Linked to dim_constructors"
+      - name: best_qualifying_time
+        description: "Fastest time from across Q1/Q2/Q3 sessions"
+
+  - name: fct_race_results
+    description: "Core race finish results and points awarded"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: constructor_id
+        description: "Foreign Key: Linked to dim_constructors"
+      - name: finish_position
+        description: "Official finishing rank"
+      - name: points
+        description: "Points awarded for this race"
+      - name: positions_gained
+        description: "Difference between grid position and finish position"
+
+  - name: fct_sprint_results
+    description: "Results for Sprint Qualifying events"
+    columns:
+      - name: season
+        description: "Year link to dim_races"
+        tests: [not_null]
+      - name: round
+        description: "Round link to dim_races"
+        tests: [not_null]
+      - name: driver_id
+        description: "Foreign Key: Linked to dim_drivers"
+        tests: [not_null]
+      - name: constructor_id
+        description: "Foreign Key: Linked to dim_constructors"
+      - name: positions_gained
+        description: "Difference between grid position and finish position"
