@@ -119,82 +119,82 @@ real-world production deployments.
 <!-- markdownlint-disable MD013 -->
 
 ```mermaid
-%%{init: {'theme': 'neutral', 'themeVariables': { 'primaryColor': '#E2E8F0', 'edgeLabelBackground':'#ffffff', 'tertiaryColor': '#f3f4f6' }}}%%
 erDiagram
-    %% --- HUB DIMENSIONS (Centralized) ---
-    dim_races {
-        UInt16 season PK
-        UInt8 round PK
-        String race_name
-    }
-    dim_drivers {
-        String driver_id PK
-        String full_name
-        String code
-    }
-
-    %% --- SUPPORTING DIMENSIONS ---
-    dim_constructors {
-        String constructor_id PK
-        String name
-    }
-    dim_circuits {
+    %% --- TOP DIMENSIONS ---
+    dim_circuits["dim_circuits (Mint)"] {
         String circuit_id PK
         String circuit_name
     }
-    dim_status {
+    dim_status["dim_status (Mint)"] {
         Int status_id PK
         String status_text
     }
 
-    %% --- PERFORMANCE FACTS ---
-    fct_race_results {
+    %% --- CENTRAL FACT HUB ---
+    fct_race_results["fct_race_results (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
         Float points
     }
-    fct_qualifying {
+    fct_qualifying["fct_qualifying (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
     }
-    fct_sprint_results {
+    fct_sprint_results["fct_sprint_results (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int position
     }
-
-    %% --- ANALYTICS FACTS ---
-    fct_lap_times {
+    fct_lap_times["fct_lap_times (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int lap
     }
-    fct_pit_stops {
+    fct_pit_stops["fct_pit_stops (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int stop
     }
-    fct_driver_standings {
+    fct_driver_standings["fct_driver_standings (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String driver_id FK
         Int points
     }
-    fct_constructor_standings {
+    fct_constructor_standings["fct_constructor_standings (Rose)"] {
         UInt16 season FK
         UInt8 round FK
         String constructor_id FK
         Int points
     }
 
-    %% --- RELATIONSHIPS (Ordered by Hub) ---
+    %% --- BOTTOM/SIDE DIMENSIONS ---
+    dim_races["dim_races (Mint)"] {
+        UInt16 season PK
+        UInt8 round PK
+        String race_name
+    }
+    dim_drivers["dim_drivers (Mint)"] {
+        String driver_id PK
+        String full_name
+        String code
+    }
+    dim_constructors["dim_constructors (Mint)"] {
+        String constructor_id PK
+        String name
+    }
+
+    %% --- RELATIONSHIPS (Guiding the Star Layout) ---
+    dim_circuits ||--o{ dim_races : "at"
+    
+    %% Races -> Facts
     dim_races ||--o{ fct_race_results : "races"
     dim_races ||--o{ fct_qualifying : "races"
     dim_races ||--o{ fct_sprint_results : "races"
@@ -203,6 +203,7 @@ erDiagram
     dim_races ||--o{ fct_driver_standings : "races"
     dim_races ||--o{ fct_constructor_standings : "races"
 
+    %% Drivers -> Facts
     dim_drivers ||--o{ fct_race_results : "driver"
     dim_drivers ||--o{ fct_qualifying : "driver"
     dim_drivers ||--o{ fct_sprint_results : "driver"
@@ -210,12 +211,12 @@ erDiagram
     dim_drivers ||--o{ fct_pit_stops : "driver"
     dim_drivers ||--o{ fct_driver_standings : "driver"
 
+    %% Constructors -> Facts
     dim_constructors ||--o{ fct_race_results : "team"
     dim_constructors ||--o{ fct_qualifying : "team"
     dim_constructors ||--o{ fct_sprint_results : "team"
     dim_constructors ||--o{ fct_constructor_standings : "team"
 
-    dim_circuits ||--o{ dim_races : "at"
 ```
 
 <!-- markdownlint-enable MD013 -->
