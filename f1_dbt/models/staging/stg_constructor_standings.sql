@@ -1,12 +1,12 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "standings"]) }}
 
 select
-    position,
+    assumeNotNull(position) as position,
     points,
     wins,
 
     -- Constructor
-    constructor_constructor_id  as constructor_id,
+    assumeNotNull(constructor_constructor_id)  as constructor_id,
     constructor_name            as constructor_name,
     constructor_nationality     as constructor_nationality
 

@@ -3,7 +3,7 @@
         materialized="table",
         schema="gold",
         tags=["gold", "fact"],
-        order_by="(driver_id, position)"
+        order_by="(driver_id, championship_position)"
     )
 }}
 

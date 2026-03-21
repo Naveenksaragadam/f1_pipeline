@@ -11,7 +11,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "${AIRFLOW_USERNAME:-airflow}:admin"
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: '/opt/airflow/config/airflow_passwords.json'
     # Airflow 3.x Execution API - correct JWT secret config
-    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-webserver:8080/execution/'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-webserver:8080/execution'
     AIRFLOW__API_AUTH__JWT_SECRET: 'dGhpc2lzYXZlcnlsb25nc2VjcmV0a2V5Zm9yYWlyZmxvdzN4aHM1MTJ3b3Jrcw=='
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.session'
 
@@ -193,7 +193,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 4G
 
   # --- AIRFLOW DAG PROCESSOR ---
   airflow-dag-processor:

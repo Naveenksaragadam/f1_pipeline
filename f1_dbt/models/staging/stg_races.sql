@@ -1,8 +1,8 @@
 {{ config(materialized="view", schema="staging", tags=["staging", "races"]) }}
 
 select
-    season,
-    round,
+    assumeNotNull(season) as season,
+    assumeNotNull(round) as round,
     url,
     race_name,
     date,

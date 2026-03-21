@@ -15,6 +15,8 @@ f1_dbt:
       connect_timeout: 10
       cluster_mode: false
       threads: 4  # Parallel model builds
+      custom_settings:
+        input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference: 1
       
     # CI/Testing (Ephemeral schemas)
     ci:
@@ -27,6 +29,8 @@ f1_dbt:
       secure: false
       verify: false
       connect_timeout: 10
+      custom_settings:
+        input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference: 1
       
     # Production
     prod:
@@ -41,3 +45,5 @@ f1_dbt:
       connect_timeout: 30
       cluster_mode: false
       threads: 8
+      custom_settings:
+        input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference: 1

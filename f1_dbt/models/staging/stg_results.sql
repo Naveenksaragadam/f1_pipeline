@@ -10,7 +10,7 @@ select
     status,
 
     -- Driver
-    driver_driver_id          as driver_id,
+    assumeNotNull(driver_driver_id)          as driver_id,
     driver_permanent_number   as driver_number,
     driver_code               as driver_code,
     driver_given_name         as driver_given_name,
@@ -19,7 +19,7 @@ select
     driver_nationality        as driver_nationality,
 
     -- Constructor
-    constructor_constructor_id as constructor_id,
+    assumeNotNull(constructor_constructor_id) as constructor_id,
     constructor_name           as constructor_name,
     constructor_nationality    as constructor_nationality,
 
@@ -36,3 +36,4 @@ select
     fastest_lap_average_speed_units       as fastest_lap_speed_units
 
 from {{ read_silver_parquet('results') }}
+settings input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference=1
