@@ -25,6 +25,7 @@ jobs:
       CLICKHOUSE_PASSWORD: "ci-dummy-password"
       MINIO_ACCESS_KEY: "ci-dummy-key"
       MINIO_SECRET_KEY: "ci-dummy-secret"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     
     steps:
       - name: Checkout code
