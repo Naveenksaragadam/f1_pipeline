@@ -681,10 +681,11 @@ for details.
 
 - [x] Astronomer Cosmos integration
 - [x] dbt staging models (Silver Parquet → View)
-- [x] dbt dimension models (SCD logic, enrichment)
+- [x] dbt dimension models (Record deduplication, enrichment)
 - [x] dbt fact models (Analytical grain)
 - [x] Materialized views & performance tuning
 - [x] Data documentation & testing
+- [ ] SCD Type 2 implementation (Historical tracking)
 
 ### Phase 4: Analytics (Future)
 
