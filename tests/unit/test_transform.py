@@ -102,7 +102,7 @@ def test_extract_records_nested_lists(transformer: F1Transformer) -> None:
     raw_data = {"MRData": {"RaceTable": {"Races": [{"Laps": [{"number": "1", "Timings": []}]}]}}}
     records = transformer._extract_records(raw_data)
     assert len(records) == 1
-    assert "Laps" in str(records)  # Heuristic finds the first list of dicts
+    assert records[0]["number"] == "1"
 
 
 def test_process_batch_success(transformer: F1Transformer) -> None:
@@ -151,6 +151,14 @@ def test_process_complex_types_explosion() -> None:
     assert "items_id" in flat_df.columns
     assert "items_name" in flat_df.columns
     assert flat_df["items_id"].to_list() == [10, 11]
+
+
+def test_extract_records_malformed_inner_list(transformer: F1Transformer) -> None:
+    """Test extraction when a target inner key is present but is not a list."""
+    raw_data = {"MRData": {"RaceTable": {"Races": [{"Laps": "not-a-list"}]}}}
+    records = transformer._extract_records(raw_data)
+    # Should skip the malformed entry and return empty (since it was the only one)
+    assert len(records) == 0
 
 
 def test_extract_records_no_lists(transformer: F1Transformer) -> None:
@@ -242,4 +250,29 @@ def test_process_batch_custom_threshold(mock_stores: tuple[MagicMock, MagicMock]
     ]
     # Should NOT raise because 33% < 50%
     df = transformer.process_batch(records)
-    assert df.height == 4
+def test_process_object_null_series_cast(mock_stores: tuple[MagicMock, MagicMock]) -> None:
+    """Verify that pure Null series are cast to String during process_object."""
+    bronze, silver = mock_stores
+
+    class OptionalSchema(F1BaseModel):
+        driver_id: str = Field(alias="driverId")
+        maybe_null: str | None = Field(default=None, alias="maybeNull")
+
+    transformer = F1Transformer(bronze, silver, OptionalSchema)
+
+    # Data with all nulls for maybe_null
+    bronze.get_json.return_value = {
+        "MRData": {"Table": {"Rows": [{"driverId": "max", "maybeNull": None}]}}
+    }
+
+    transformer.process_object("src.json", "tgt.parquet")
+
+    # Capture the dataframe written to parquet
+    args, kwargs = silver.put_object.call_args
+    body = kwargs["body"]
+    body.seek(0)
+    written_df = pl.read_parquet(body)
+
+    # maybe_null should now be String (UTF8), not Null
+    assert written_df["maybe_null"].dtype == pl.String
+    assert written_df["maybe_null"][0] is None
