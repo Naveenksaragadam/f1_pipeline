@@ -56,6 +56,11 @@ models:
         +schema: gold            # Creates gold.fct_*
         +materialized: table     # Materialized for query performance
         +tags: ['gold', 'fact']
+
+snapshots:
+  f1_dbt:
+    +schema: snapshots
+    +tags: ['gold', 'snapshot']
       
 vars:
   # MinIO connection
